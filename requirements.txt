@@ -1,0 +1,10 @@
+streamlit
+pypdf
+python-docx
+fpdf
+gTTS 
+Pillow
+SpeechRecognition
+pandas 
+openpyxl
+google-generativeai>=0.7.0
