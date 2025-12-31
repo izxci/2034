@@ -422,15 +422,15 @@ def main():
     
     auto_data = extract_metadata(st.session_state.doc_text)
 
-        # --- SEKMELER (2 SATIR - TOPLAM 26 MODÜL) ---
+    # --- SEKMELER (2 SATIR - TOPLAM 27 MODÜL) ---
     
-    # 1. SATIR: Temel Araçlar + Yeni Eklenenler (13 Sekme)
-    st.markdown("### 🛠️ Temel Araçlar & Ofis")
-    # tab26 (Çeviri) buraya eklendi
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab24, tab25, tab26, tab9, tab10 = st.tabs([
+    # 1. SATIR: Temel Araçlar + Yeni Eklenenler (14 Sekme)
+    st.markdown("### 🛠️ Temel Araçlar & Strateji")
+    # tab29 (Tez Çürüt) buraya eklendi
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab24, tab25, tab26, tab29, tab9, tab10 = st.tabs([
         "📋 Analiz", "💬 Sohbet", "📕 Mevzuat", "⚖️ İçtihat", 
         "✍️ Dilekçe Yaz", "❓ Bana Sor", "🎙️ Sesli Komut", "👁️ OCR",
-        "📅 Zaman Çizelgesi", "💱 Döviz Hesabı", "🌍 Çeviri", "🤿 Dalgıç", "🙋 Buyur Abi"
+        "📅 Zaman Çizelgesi", "💱 Döviz Hesabı", "🌍 Çeviri", "🛡️ Tez Çürüt", "🤿 Dalgıç", "🙋 Buyur Abi"
     ])
 
     # 2. SATIR: Yönetim & Pro Modüller (13 Sekme - Değişmedi)
@@ -439,8 +439,9 @@ def main():
         "⏰ Hatırlatıcı", "🗄️ Arşiv", "🏛️ UYAP Analiz", "🧮 Faiz Hesabı", 
         "⏳ Süre Hesapla", "🕸️ İlişki Ağı", "📝 Sözleşme Analiz", "📧 Müvekkil Bilgi", 
         "🕵️‍♂️ KVKK Temizle", "💰 AAÜT Hesapla", "⚔️ Belge Kıyasla", "🎭 Sanal Duruşma", 
-        "✅ Görev Çıkar"
+        "✅ Görevler"
     ])
+
 
     # --- TAB İÇERİKLERİ ---
 
@@ -1353,6 +1354,43 @@ def main():
                         {ceviri_sonuc}
                     </div>
                     """, unsafe_allow_html=True)
+    with tab29: # Tez Çürütücü Modülü
+        st.subheader("🛡️ Karşı Taraf Tez Çürütücü")
+        st.info("Karşı tarafın iddiasını girin, yapay zeka bu iddiayı çürütmek için hukuki argümanlar üretsin.")
+        
+        col_tez1, col_tez2 = st.columns([2, 1])
+        with col_tez1:
+            karsi_iddia = st.text_area("Karşı Tarafın İddiası / Savunması:", height=150, placeholder="Örn: Davalı, işe geç gelmeyi alışkanlık haline getirdiği için haklı nedenle fesih yapıldığını iddia etmektedir...")
+        with col_tez2:
+            st.write("📌 **Strateji Seçimi:**")
+            strateji = st.radio("Nasıl Çürütelim?", ["Agresif (Sert Savunma)", "Teknik (Usul Hukuku)", "Uzlaşmacı (Alternatifli)"])
+            
+        if st.button("Argümanları Üret", type="primary"):
+            if not api_key: st.error("API Key gerekli.")
+            elif not karsi_iddia: st.warning("Lütfen çürütülecek bir iddia girin.")
+            else:
+                with st.spinner("Yargıtay kararları ve kanun maddeleri taranıyor..."):
+                    prompt = f"""
+                    GÖREV: Sen tecrübeli bir avukatsın. Aşağıdaki karşı taraf iddiasını çürütmek için 3 farklı hukuki argüman geliştir.
+                    İDDİA: {karsi_iddia}
+                    STRATEJİ: {strateji}
+                    
+                    ÇIKTI FORMATI:
+                    1. [Argüman Başlığı] - [Hukuki Dayanak/Mantık]
+                    2. [Argüman Başlığı] - [Hukuki Dayanak/Mantık]
+                    3. [Argüman Başlığı] - [Hukuki Dayanak/Mantık]
+                    
+                    NOT: İlgili olabilecek Kanun Maddelerini (Örn: HMK, TBK, İş Kanunu) parantez içinde belirt.
+                    """
+                    cevap = get_ai_response(prompt, api_key)
+                    
+                    st.success("✅ İşte Kullanabileceğiniz Karşı Argümanlar:")
+                    st.markdown(f"""
+                    <div style="background-color:#fff3cd; padding:20px; border-radius:10px; border: 1px solid #ffeeba; color:#856404;">
+                        {cevap}
+                    </div>
+                    """, unsafe_allow_html=True)
+
 
 
 if __name__ == "__main__":
