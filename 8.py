@@ -429,7 +429,7 @@ def main():
     tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab25, tab26, tab29, tab30, tab31, tab9 = st.tabs([
         "📋 Analiz", "💬 Sohbet", "📕 Mevzuat", "⚖️ İçtihat", 
         "✍️ Dilekçe Yaz", "❓ Bana Sor", "🎙️ Sesli Komut", "👁️ OCR",
-        "📅 Zaman Çizelgesi", "💱 Döviz Hesabı", "🌍 Çeviri", "🛡️ Tez Çürüt", "🕵️‍♂️ Sorgu", "😈 Şeytanın Avukatı", "🤿 Dalgıç"
+        "📅 Zaman Çizelgesi", "🌍 Çeviri", "🛡️ Tez Çürüt", "🕵️‍♂️ Sorgu", "😈 Şeytanın Avukatı", "🤿 Dalgıç"
     ])
 
     # 2. SATIR: Yönetim, Pro Modüller, Canlı Asistan ve "Etki Analizi" (16 Sekme)
