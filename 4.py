@@ -26,7 +26,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- CSS (Orijinal Tasarım) ---
+# --- CSS ---
 st.markdown("""
     <style>
     .main { background-color: #f8f9fa; }
@@ -69,10 +69,10 @@ st.markdown("""
         margin-bottom: 10px;
     }
     .uyap-kutusu {
-        background-color: #f3e5f5;
-        padding: 15px;
-        border-left: 5px solid #673ab7;
-        border-radius: 5px;
+        background-color: #fce4ec; 
+        padding: 15px; 
+        border-left: 5px solid #c2185b; 
+        border-radius: 5px; 
         margin-bottom: 20px;
     }
     </style>
@@ -259,7 +259,6 @@ def perform_ocr_gemini(file_bytes, mime_type, api_key, prompt_text="Bu dosyanın
     if not api_key: return "API Key Yok"
     genai.configure(api_key=api_key)
     
-    # TIFF Desteği
     if mime_type in ['image/tiff', 'image/tif']:
         try:
             image = Image.open(file_bytes)
@@ -332,7 +331,7 @@ def get_ai_response(prompt, api_key):
 
 # --- ANA UYGULAMA ---
 def main():
-    st.title("⚖️ Hukuk Asistanı (v8.2 - Tam Yapı + UYAP)")
+    st.title("⚖️ Hukuk Asistanı (v8.6 - UYAP Entegrasyonlu)")
     
     try:
         lib_ver = importlib.metadata.version("google-generativeai")
@@ -343,7 +342,6 @@ def main():
     if "durusma_listesi" not in st.session_state:
         st.session_state.durusma_listesi = load_durusma_data()
 
-    # Session State (Diğerleri)
     if "doc_text" not in st.session_state: st.session_state.doc_text = ""
     if "last_file_id" not in st.session_state: st.session_state.last_file_id = None
     if "messages" not in st.session_state: st.session_state.messages = []
@@ -358,7 +356,6 @@ def main():
     if "buyur_abi_context" not in st.session_state: st.session_state.buyur_abi_context = ""
     if "buyur_abi_response" not in st.session_state: st.session_state.buyur_abi_response = ""
     
-    # Arşiv State
     if "arsiv_context" not in st.session_state: st.session_state.arsiv_context = ""
     if "arsiv_genel_ozet" not in st.session_state: st.session_state.arsiv_genel_ozet = ""
     if "arsiv_soru_cevap" not in st.session_state: st.session_state.arsiv_soru_cevap = ""
@@ -366,7 +363,6 @@ def main():
     if "aktif_dosya_adi" not in st.session_state: st.session_state.aktif_dosya_adi = ""
     if "aktif_dosya_yolu" not in st.session_state: st.session_state.aktif_dosya_yolu = ""
 
-    # Ana Arşiv Klasörü (Disk üzerinde kalıcı)
     ROOT_DIR = "Hukuk_Arsivi"
     if not os.path.exists(ROOT_DIR):
         os.makedirs(ROOT_DIR)
@@ -385,11 +381,11 @@ def main():
         
         if st.button("🗑️ Ekranı Temizle"):
             for key in st.session_state.keys():
-                if key != "durusma_listesi": # Duruşmaları koru
+                if key != "durusma_listesi":
                     del st.session_state[key]
             st.rerun()
 
-    uploaded_file = st.file_uploader("Çalışılacak Ana Dosya (UDF/PDF)", type=['udf', 'pdf'])
+    uploaded_file = st.file_uploader("Dosya Yükle (UDF/PDF)", type=['udf', 'pdf'])
 
     if uploaded_file and st.session_state.get('last_file_id') != uploaded_file.file_id:
         with st.spinner("Okunuyor..."):
@@ -405,7 +401,7 @@ def main():
     
     auto_data = extract_metadata(st.session_state.doc_text)
 
-    # --- SEKMELER ---
+    # --- SEKMELER (UYAP EKLENDİ) ---
     tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12, tab13 = st.tabs([
         "📋 Analiz", "💬 Sohbet", "📕 Mevzuat", "⚖️ İçtihat", 
         "✍️ Dilekçe Yaz", "❓ Bana Sor", "🎙️ Sesli Komut", "👁️ OCR", "🤿 Dalgıç", "🙋 Buyur Abi", "⏰ Hatırlatıcı", "🗄️ Arşiv", "🏛️ UYAP Analiz"
@@ -907,4 +903,127 @@ def main():
                                                         full_text += f"\n--- {f_name} ---\n{pdf_text}"
                                                     elif ext in ['docx', 'doc']:
                                                         full_text += f"\n--- {f_name} ---\n{extract_text_from_docx(file_content)}"
-                               
+                                                    elif ext == 'udf':
+                                                        full_text += f"\n--- {f_name} ---\n{parse_udf(file_content)}"
+                                                    elif ext in ['png', 'jpg', 'jpeg', 'tif', 'tiff']:
+                                                        mime = "image/tiff" if ext in ['tif', 'tiff'] else "image/jpeg"
+                                                        file_content.seek(0)
+                                                        ocr_res = perform_ocr_gemini(file_content, mime, api_key)
+                                                        full_text += f"\n--- {f_name} ---\n{ocr_res}"
+                                                except Exception as e:
+                                                    full_text += f"\n--- {f_name} (HATA) ---\n{str(e)}"
+                                            
+                                            st.session_state.arsiv_context = full_text
+                                            st.session_state.aktif_dosya_adi = os.path.basename(sonuc['yol'])
+                                            st.session_state.aktif_dosya_yolu = sonuc['yol']
+                                            st.rerun()
+
+    # --- TAB 13: UYAP ANALİZ (YENİ VE EKSİKSİZ) ---
+    with tab13:
+        st.subheader("🏛️ UYAP Toplu Dosya Analizi")
+        st.info("UYAP'tan indirdiğiniz ZIP dosyalarını (Dava Dosyaları) buraya yükleyin. Sistem her bir dosyayı ayrı ayrı açar, içindeki evrakları tarihe göre sıralar ve **SON 5 EVRAĞI** analiz edip raporlar.")
+        
+        uyap_zips = st.file_uploader("UYAP Dosyalarını Yükle (ZIP Formatında)", type=['zip'], accept_multiple_files=True)
+        
+        if uyap_zips and st.button("🚀 Dosyaları Analiz Et", type="primary"):
+            if not api_key:
+                st.error("Lütfen önce sol menüden API Anahtarını giriniz.")
+            else:
+                progress_bar = st.progress(0)
+                total_files = len(uyap_zips)
+                
+                for idx, zip_file in enumerate(uyap_zips):
+                    dosya_adi = zip_file.name
+                    st.markdown(f"### 📂 Dosya: {dosya_adi}")
+                    
+                    with st.spinner(f"{dosya_adi} inceleniyor..."):
+                        try:
+                            # ZIP İşleme
+                            with zipfile.ZipFile(zip_file) as z:
+                                # Dosyaları tarihine göre sırala (En yeni en üstte)
+                                files_info = []
+                                for info in z.infolist():
+                                    if not info.is_dir():
+                                        files_info.append({
+                                            'name': info.filename,
+                                            'date': datetime(*info.date_time),
+                                            'size': info.file_size
+                                        })
+                                
+                                # Tarihe göre tersten sırala (En yeni ilk)
+                                sorted_files = sorted(files_info, key=lambda x: x['date'], reverse=True)
+                                
+                                # Son 5 evrağı al
+                                last_5_files = sorted_files[:5]
+                                
+                                if not last_5_files:
+                                    st.warning("Bu ZIP dosyasında okunabilir evrak bulunamadı.")
+                                    continue
+                                
+                                st.write(f"**Tespit Edilen Son 5 Evrak ({dosya_adi}):**")
+                                
+                                file_context = ""
+                                for f_info in last_5_files:
+                                    fname = f_info['name']
+                                    fdate = f_info['date'].strftime('%d.%m.%Y %H:%M')
+                                    st.text(f"- {fdate}: {fname}")
+                                    
+                                    # İçerik Okuma
+                                    with z.open(fname) as f:
+                                        file_bytes = BytesIO(f.read())
+                                        ext = fname.split('.')[-1].lower()
+                                        content = ""
+                                        
+                                        try:
+                                            if ext == 'udf': content = parse_udf(file_bytes)
+                                            elif ext == 'pdf': content = parse_pdf(file_bytes)
+                                            elif ext in ['docx', 'doc']: content = extract_text_from_docx(file_bytes)
+                                            elif ext == 'txt': content = file_bytes.read().decode('utf-8', errors='ignore')
+                                            elif ext in ['jpg', 'png', 'tif', 'tiff']: 
+                                                mime = "image/tiff" if 'tif' in ext else "image/jpeg"
+                                                content = perform_ocr_gemini(file_bytes, mime, api_key)
+                                        except Exception as e:
+                                            content = f"Okuma Hatası: {str(e)}"
+                                        
+                                        file_context += f"\n\n--- EVRAK: {fname} (Tarih: {fdate}) ---\n{content}"
+                                
+                                # AI Analizi
+                                prompt = f"""
+                                GÖREV: Aşağıda bir dava dosyasının SON 5 İŞLEM GÖREN EVRAĞI verilmiştir.
+                                Bu evrakları analiz et ve şu formatta raporla:
+                                1. Dosyanın Güncel Durumu Nedir?
+                                2. Son 5 evrakta neler olmuş? (Kısa özetler)
+                                3. Avukatın yapması gereken acil bir işlem veya süreli bir iş var mı?
+                                4. Lehe veya aleyhe durumlar neler?
+                                
+                                EVRAKLAR:
+                                {file_context[:100000]}
+                                """
+                                
+                                analiz_sonucu = get_ai_response(prompt, api_key)
+                                
+                                # Sonucu Göster
+                                st.markdown(f"<div class='uyap-kutusu'>{analiz_sonucu}</div>", unsafe_allow_html=True)
+                                
+                                # İndirme Butonları (Bu dosyaya özel)
+                                c_d1, c_d2 = st.columns(2)
+                                safe_name = dosya_adi.replace(".", "_")
+                                c_d1.download_button(f"📥 Raporu İndir (PDF) - {dosya_adi}", 
+                                                   create_pdf_file(analiz_sonucu), 
+                                                   f"{safe_name}_Analiz.pdf", "application/pdf")
+                                c_d2.download_button(f"📥 Raporu İndir (Word) - {dosya_adi}", 
+                                                   create_word_file(analiz_sonucu), 
+                                                   f"{safe_name}_Analiz.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+                                
+                                st.divider()
+
+                        except Exception as e:
+                            st.error(f"{dosya_adi} işlenirken hata oluştu: {str(e)}")
+                    
+                    progress_bar.progress((idx + 1) / total_files)
+                
+                st.success("Tüm dosyalar analiz edildi!")
+
+if __name__ == "__main__":
+    main()
+
