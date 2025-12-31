@@ -1402,15 +1402,18 @@ def main():
                             {analiz_sonucu}
                         </div>
                         """, unsafe_allow_html=True)
-    with tab34: # Semantik Arşiv Sorgulama (RAG) - OCR Destekli
+    with tab34: # Semantik Arşiv Sorgulama (RAG) - OCR Destekli (Düzeltilmiş)
         st.subheader("🧠 Semantik Arşiv (OCR & Çoklu Format)")
         st.info("PDF, Word, UDF, TXT ve Resim (JPG, PNG) dosyalarını yükleyin. Sistem görselleri okur (OCR), metinleri tarar ve sorunuzun cevabını dosya adıyla birlikte verir.")
         
-        # Genişletilmiş Dosya Yükleme Alanı
+        # Hata önleyici: Uzantı listesini değişkene atıyoruz
+        allowed_extensions = ["pdf", "txt", "docx", "doc", "udf", "png", "jpg", "jpeg", "tiff", "bmp"]
+        
+        # Dosya Yükleme Alanı
         uploaded_archive = st.file_uploader(
             "Arşive Eklenecek Dosyalar", 
             accept_multiple=True, 
-            type=['pdf', 'txt', 'docx', 'doc', 'udf', 'png', 'jpg', 'jpeg', 'tiff', 'bmp']
+            type=allowed_extensions
         )
         
         # Oturum bazlı hafıza
@@ -1419,89 +1422,119 @@ def main():
             
         if uploaded_archive:
             if st.button("📂 Dosyaları Tara, OCR Yap ve Hafızaya Al"):
-                import PyPDF2
-                from docx import Document # python-docx kütüphanesi
-                from PIL import Image # Resim işleme
-                import pytesseract # OCR kütüphanesi
-                import io
-
-                tum_metin = ""
-                basarili_dosya = 0
-                progress_bar = st.progress(0)
-                
-                st.toast("Dosyalar işleniyor, OCR motoru çalıştırılıyor...", icon="⚙️")
-
-                for i, file in enumerate(uploaded_archive):
-                    file_name = file.name
-                    file_ext = file_name.split('.')[-1].lower()
-                    file_content = ""
+                # Gerekli kütüphaneleri burada çağırıyoruz (Hata yönetimi için)
+                try:
+                    import PyPDF2
+                    import io
+                    # Bu kütüphaneler yüklü değilse hata vermemesi için try-except içine alıyoruz
+                    try:
+                        from docx import Document
+                    except ImportError:
+                        Document = None
+                        st.warning("⚠️ 'python-docx' kütüphanesi yüklü değil. Word dosyaları okunamayabilir.")
                     
                     try:
-                        # 1. PDF OKUMA
-                        if file_ext == 'pdf':
-                            try:
-                                pdf_reader = PyPDF2.PdfReader(file)
-                                for page in pdf_reader.pages:
-                                    text = page.extract_text()
-                                    if text: file_content += text + "\n"
-                            except:
-                                file_content = "[Bu PDF okunamadı veya şifreli]"
+                        from PIL import Image
+                        import pytesseract
+                    except ImportError:
+                        Image = None
+                        pytesseract = None
+                        st.warning("⚠️ 'Pillow' veya 'pytesseract' yüklü değil. Resim okuma (OCR) çalışmayabilir.")
 
-                        # 2. WORD (DOCX) OKUMA
-                        elif file_ext == 'docx':
-                            try:
-                                doc = Document(file)
-                                for para in doc.paragraphs:
-                                    file_content += para.text + "\n"
-                            except:
-                                file_content = "[DOCX formatı okunamadı]"
-                        
-                        # 3. RESİM DOSYALARI (OCR İŞLEMİ)
-                        elif file_ext in ['png', 'jpg', 'jpeg', 'tiff', 'bmp', 'img']:
-                            try:
-                                image = Image.open(file)
-                                # Tesseract ile resimden yazıya (Türkçe)
-                                # Not: Tesseract yüklü değilse hata verebilir, try-except ile yakalıyoruz
-                                file_content = pytesseract.image_to_string(image, lang='tur')
-                                if not file_content: file_content = "[Resimde okunabilir metin bulunamadı]"
-                            except Exception as e_ocr:
-                                file_content = f"[OCR Hatası: Tesseract kütüphanesi bulunamadı veya resim bozuk. Detay: {e_ocr}]"
-
-                        # 4. UDF (UYAP) ve TXT OKUMA
-                        elif file_ext in ['txt', 'udf', 'xml']:
-                            try:
-                                stringio = io.StringIO(file.getvalue().decode("utf-8", errors='ignore'))
-                                file_content = stringio.read()
-                            except:
-                                file_content = "[Metin dosyası okunamadı]"
-                        
-                        # 5. ESKİ WORD (DOC) - Genelde binary olduğu için zordur, basit okuma denenir
-                        elif file_ext == 'doc':
-                             file_content = "[.doc formatı binary olduğu için tam desteklenmiyor, lütfen .docx'e çevirip yükleyin.]"
-
-                        # Metni Hafızaya Ekle (Dosya etiketiyle)
-                        if len(file_content) > 10: # Çok kısa veya boş içerikleri alma
-                            tum_metin += f"\n{'='*20}\n📂 DOSYA ADI: {file_name}\n{'='*20}\n{file_content}\n"
-                            basarili_dosya += 1
-                        
-                    except Exception as e:
-                        st.error(f"Hata ({file_name}): {e}")
+                    tum_metin = ""
+                    basarili_dosya = 0
+                    progress_bar = st.progress(0)
                     
-                    # İlerleme çubuğunu güncelle
-                    progress_bar.progress((i + 1) / len(uploaded_archive))
-                
-                st.session_state.archive_memory = tum_metin
-                if basarili_dosya > 0:
-                    st.success(f"✅ {basarili_dosya} dosya başarıyla işlendi, OCR yapıldı ve hafızaya alındı!")
-                else:
-                    st.warning("Hiçbir dosyadan anlamlı veri okunamadı.")
+                    st.toast("Dosyalar işleniyor, lütfen bekleyin...", icon="⏳")
+
+                    for i, file in enumerate(uploaded_archive):
+                        file_name = file.name
+                        # Uzantıyı küçük harfe çevirip alıyoruz
+                        file_ext = file_name.split('.')[-1].lower()
+                        file_content = ""
+                        
+                        try:
+                            # 1. PDF OKUMA
+                            if file_ext == 'pdf':
+                                try:
+                                    pdf_reader = PyPDF2.PdfReader(file)
+                                    for page in pdf_reader.pages:
+                                        text = page.extract_text()
+                                        if text: file_content += text + "\n"
+                                except:
+                                    file_content = "[Bu PDF okunamadı veya şifreli]"
+
+                            # 2. WORD (DOCX) OKUMA
+                            elif file_ext == 'docx':
+                                if Document:
+                                    try:
+                                        doc = Document(file)
+                                        for para in doc.paragraphs:
+                                            file_content += para.text + "\n"
+                                    except:
+                                        file_content = "[DOCX formatı okunamadı]"
+                                else:
+                                    file_content = "[Sistemde python-docx kütüphanesi eksik]"
+                            
+                            # 3. RESİM DOSYALARI (OCR İŞLEMİ)
+                            elif file_ext in ['png', 'jpg', 'jpeg', 'tiff', 'bmp', 'img']:
+                                if Image and pytesseract:
+                                    try:
+                                        image = Image.open(file)
+                                        # Tesseract OCR işlemi
+                                        # Not: Dil parametresi 'tur' (Türkçe) veya 'eng' (İngilizce) olabilir.
+                                        # Hata almamak için varsayılanı kullanıyoruz, varsa 'tur' eklenmeli.
+                                        try:
+                                            file_content = pytesseract.image_to_string(image, lang='tur')
+                                        except:
+                                            file_content = pytesseract.image_to_string(image)
+                                            
+                                        if not file_content.strip(): 
+                                            file_content = "[Resimde okunabilir metin bulunamadı]"
+                                    except Exception as e_ocr:
+                                        file_content = f"[OCR Hatası: {str(e_ocr)}]"
+                                else:
+                                    file_content = "[Sistemde OCR kütüphaneleri eksik]"
+
+                            # 4. UDF (UYAP) ve TXT OKUMA
+                            elif file_ext in ['txt', 'udf', 'xml']:
+                                try:
+                                    stringio = io.StringIO(file.getvalue().decode("utf-8", errors='ignore'))
+                                    file_content = stringio.read()
+                                except:
+                                    file_content = "[Metin dosyası okunamadı]"
+                            
+                            # 5. ESKİ WORD (DOC)
+                            elif file_ext == 'doc':
+                                 file_content = "[.doc formatı binary olduğu için tam desteklenmiyor, lütfen .docx'e çevirip yükleyin.]"
+
+                            # Metni Hafızaya Ekle
+                            if len(file_content) > 5: 
+                                tum_metin += f"\n{'='*20}\n📂 DOSYA ADI: {file_name}\n{'='*20}\n{file_content}\n"
+                                basarili_dosya += 1
+                            
+                        except Exception as e:
+                            st.error(f"Hata ({file_name}): {e}")
+                        
+                        # İlerleme çubuğunu güncelle
+                        progress_bar.progress((i + 1) / len(uploaded_archive))
+                    
+                    st.session_state.archive_memory = tum_metin
+                    
+                    if basarili_dosya > 0:
+                        st.success(f"✅ {basarili_dosya} dosya başarıyla işlendi ve hafızaya alındı!")
+                    else:
+                        st.warning("Dosyalar yüklendi ancak içerik okunamadı.")
+                        
+                except Exception as e_main:
+                    st.error(f"Genel İşlem Hatası: {e_main}")
 
         st.divider()
         
         # Soru Sorma Alanı
         col_rag1, col_rag2 = st.columns([3, 1])
         with col_rag1:
-            rag_soru = st.text_input("Arşive Soru Sor:", placeholder="Örn: 'Tapu iptal davasında bilirkişi raporu kime tebliğ edilmiş?' veya 'Fotoğraftaki plakayı bul'")
+            rag_soru = st.text_input("Arşive Soru Sor:", placeholder="Örn: 'Tapu iptal davasında bilirkişi raporu kime tebliğ edilmiş?'")
         with col_rag2:
             rag_btn = st.button("🧠 Hafızayı Tara")
             
@@ -1538,6 +1571,7 @@ def main():
                         {rag_cevap}
                     </div>
                     """, unsafe_allow_html=True)
+
 
 
 
