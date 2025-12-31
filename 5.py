@@ -412,14 +412,20 @@ def main():
     
     auto_data = extract_metadata(st.session_state.doc_text)
 
-    # --- SEKMELER (YENİ ÖZELLİKLER EKLENDİ) ---
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12, tab13, tab14, tab15, tab16, tab17, tab18 = st.tabs([
+    # --- SEKMELER (2 SATIR HALİNDE DÜZENLENDİ) ---
+    # 1. Satır (İlk 10 Sekme)
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
         "📋 Analiz", "💬 Sohbet", "📕 Mevzuat", "⚖️ İçtihat", 
         "✍️ Dilekçe Yaz", "❓ Bana Sor", "🎙️ Sesli Komut", "👁️ OCR", 
-        "🤿 Dalgıç", "🙋 Buyur Abi", "⏰ Hatırlatıcı", "🗄️ Arşiv", 
-        "🏛️ UYAP Analiz", "🧮 Faiz Hesabı", "⏳ Süre Hesapla", 
-        "🕸️ İlişki Ağı", "📝 Sözleşme Analiz", "📧 Müvekkil Bilgi"
+        "🤿 Dalgıç", "🙋 Buyur Abi"
     ])
+
+    # 2. Satır (Kalan 8 Sekme)
+    tab11, tab12, tab13, tab14, tab15, tab16, tab17, tab18 = st.tabs([
+        "⏰ Hatırlatıcı", "🗄️ Arşiv", "🏛️ UYAP Analiz", "🧮 Faiz Hesabı", 
+        "⏳ Süre Hesapla", "🕸️ İlişki Ağı", "📝 Sözleşme Analiz", "📧 Müvekkil Bilgi"
+    ])
+
 
     with tab1:
         col1, col2 = st.columns(2)
