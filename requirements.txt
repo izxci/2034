@@ -9,6 +9,7 @@ Pillow
 pytesseract
 matplotlib
 SpeechRecognition
+SpeechRecognition
 pandas 
 openpyxl
 graphviz
