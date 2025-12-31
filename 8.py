@@ -1293,7 +1293,6 @@ def main():
                             {fact_check}
                         </div>
                         """, unsafe_allow_html=True)
-)
 
     with tab25: # Döviz Hesabı
         st.subheader("💱 Dövizli İcra/Alacak Hesabı")
