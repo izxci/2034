@@ -17,7 +17,7 @@ import time
 import pandas as pd
 from datetime import datetime, timedelta
 import shutil
-import json  # Verileri kaydetmek için eklendi
+import json
 
 # --- Sayfa Ayarları ---
 st.set_page_config(
@@ -79,7 +79,6 @@ def save_durusma_data(data):
     serializable_data = []
     for item in data:
         temp = item.copy()
-        # Datetime objelerini stringe çevir
         if isinstance(temp.get('dtstart'), datetime):
             temp['dtstart'] = temp['dtstart'].isoformat()
         serializable_data.append(temp)
@@ -97,7 +96,6 @@ def load_durusma_data():
     try:
         with open(DURUSMA_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-        # Stringleri tekrar datetime objesine çevir
         for item in data:
             if 'dtstart' in item and item['dtstart']:
                 item['dtstart'] = datetime.fromisoformat(item['dtstart'])
@@ -254,7 +252,6 @@ def perform_ocr_gemini(file_bytes, mime_type, api_key, prompt_text="Bu dosyanın
     if not api_key: return "API Key Yok"
     genai.configure(api_key=api_key)
     
-    # TIFF Desteği
     if mime_type in ['image/tiff', 'image/tif']:
         try:
             image = Image.open(file_bytes)
@@ -327,7 +324,7 @@ def get_ai_response(prompt, api_key):
 
 # --- ANA UYGULAMA ---
 def main():
-    st.title("⚖️ Hukuk Asistanı (v7.7 - Kalıcı Hafıza)")
+    st.title("⚖️ Hukuk Asistanı (v7.8 - Final Fix)")
     
     try:
         lib_ver = importlib.metadata.version("google-generativeai")
@@ -336,10 +333,8 @@ def main():
 
     # --- BAŞLANGIÇTA VERİLERİ YÜKLE ---
     if "durusma_listesi" not in st.session_state:
-        # Diskten yükle
         st.session_state.durusma_listesi = load_durusma_data()
 
-    # Session State (Diğerleri)
     if "doc_text" not in st.session_state: st.session_state.doc_text = ""
     if "last_file_id" not in st.session_state: st.session_state.last_file_id = None
     if "messages" not in st.session_state: st.session_state.messages = []
@@ -354,7 +349,6 @@ def main():
     if "buyur_abi_context" not in st.session_state: st.session_state.buyur_abi_context = ""
     if "buyur_abi_response" not in st.session_state: st.session_state.buyur_abi_response = ""
     
-    # Arşiv State
     if "arsiv_context" not in st.session_state: st.session_state.arsiv_context = ""
     if "arsiv_genel_ozet" not in st.session_state: st.session_state.arsiv_genel_ozet = ""
     if "arsiv_soru_cevap" not in st.session_state: st.session_state.arsiv_soru_cevap = ""
@@ -362,7 +356,6 @@ def main():
     if "aktif_dosya_adi" not in st.session_state: st.session_state.aktif_dosya_adi = ""
     if "aktif_dosya_yolu" not in st.session_state: st.session_state.aktif_dosya_yolu = ""
 
-    # Ana Arşiv Klasörü (Disk üzerinde kalıcı)
     ROOT_DIR = "Hukuk_Arsivi"
     if not os.path.exists(ROOT_DIR):
         os.makedirs(ROOT_DIR)
@@ -380,9 +373,8 @@ def main():
         input_dosya_no = st.text_input("Dosya No")
         
         if st.button("🗑️ Ekranı Temizle"):
-            # Sadece session state'i temizle, dosyaları silme
             for key in st.session_state.keys():
-                if key != "durusma_listesi": # Duruşmaları koru
+                if key != "durusma_listesi":
                     del st.session_state[key]
             st.rerun()
 
@@ -402,7 +394,6 @@ def main():
     
     auto_data = extract_metadata(st.session_state.doc_text)
 
-    # --- SEKMELER ---
     tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12 = st.tabs([
         "📋 Analiz", "💬 Sohbet", "📕 Mevzuat", "⚖️ İçtihat", 
         "✍️ Dilekçe Yaz", "❓ Bana Sor", "🎙️ Sesli Komut", "👁️ OCR", "🤿 Dalgıç", "🙋 Buyur Abi", "⏰ Hatırlatıcı", "🗄️ Arşiv"
@@ -694,14 +685,12 @@ def main():
                             if not exists:
                                 st.session_state.durusma_listesi.append(evt)
                                 count += 1
-                        # KAYDET
                         save_durusma_data(st.session_state.durusma_listesi)
                         st.success(f"{count} yeni duruşma eklendi!")
                     else: st.error("Dosya okunamadı.")
             st.divider()
             if st.button("🗑️ Tüm Listeyi Temizle"):
                 st.session_state.durusma_listesi = []
-                # BOŞ LİSTEYİ KAYDET
                 save_durusma_data([])
                 st.rerun()
         with col_h2:
@@ -726,7 +715,6 @@ def main():
                     else:
                         st.markdown(f"""<div class="normal-durusma">📅 <b>{tarih_str}</b> (Kalan: {diff.days} gün)<br>⚖️ {evt.get('summary', 'Başlıksız')}<br>📍 {evt.get('location', '-')}</div>""", unsafe_allow_html=True)
 
-    # --- SEKMELER 12: ARŞİV (RAPORLAMA + İZOLASYON) ---
     with tab12:
         st.subheader("🗄️ Doküman Yönetimi ve Arşivleme")
         st.info(f"Verileriniz bilgisayarınızda '{ROOT_DIR}' klasöründe saklanır. TIF, PDF, Resim dahil tüm dosyaları okur.")
@@ -802,7 +790,6 @@ def main():
                 st.divider()
                 col_analiz, col_soru = st.columns(2)
                 
-                # 1. KISIM: GENEL ANALİZ
                 with col_analiz:
                     st.markdown("### 📊 Analiz Et")
                     st.info("Bu klasördeki belgeleri özetler.")
@@ -817,7 +804,6 @@ def main():
                     if st.session_state.arsiv_genel_ozet:
                         st.markdown(f"<div class='kanun-kutusu'>{st.session_state.arsiv_genel_ozet}</div>", unsafe_allow_html=True)
                         
-                        # --- RAPORLAMA BUTONLARI ---
                         st.markdown("###### 📥 Raporu İndir / Paylaş")
                         c_down1, c_down2 = st.columns(2)
                         with c_down1: st.download_button("📄 PDF", create_pdf_file(st.session_state.arsiv_genel_ozet), "Analiz.pdf", "application/pdf")
@@ -828,7 +814,6 @@ def main():
                             encoded_msg = urllib.parse.quote(f"*Dosya Analizi:*\n{st.session_state.arsiv_genel_ozet}")
                             st.link_button("📲 WhatsApp'tan Gönder", f"https://wa.me/{wa_no_analiz}?text={encoded_msg}")
 
-                # 2. KISIM: SORU SOR
                 with col_soru:
                     st.markdown("### ❓ Soru Sor")
                     st.info("Sadece bu dosya ile ilgili sorular sorun.")
@@ -851,7 +836,6 @@ def main():
                     if st.session_state.arsiv_soru_cevap:
                         st.markdown(f"<div class='kanun-kutusu'>{st.session_state.arsiv_soru_cevap}</div>", unsafe_allow_html=True)
                         
-                        # --- RAPORLAMA BUTONLARI ---
                         st.markdown("###### 📥 Cevabı İndir / Paylaş")
                         q_down1, q_down2 = st.columns(2)
                         with q_down1: st.download_button("📄 PDF", create_pdf_file(st.session_state.arsiv_soru_cevap), "Cevap.pdf", "application/pdf")
@@ -885,4 +869,46 @@ def main():
                                 
                                 if st.button(f"📂 Bu Dosyayı Aç ve Çalış ({os.path.basename(sonuc['yol'])})", key=sonuc['yol']):
                                     full_text = ""
-                                    if not api_key: st.error
+                                    if not api_key: st.error("Lütfen önce API Key giriniz.")
+                                    else:
+                                        st.session_state.arsiv_context = ""
+                                        st.session_state.arsiv_genel_ozet = ""
+                                        st.session_state.arsiv_soru_cevap = ""
+                                        
+                                        with st.spinner("Sadece seçilen klasördeki dosyalar okunuyor..."):
+                                            sadece_bu_klasordeki_dosyalar = [f for f in os.listdir(sonuc['yol']) if os.path.isfile(os.path.join(sonuc['yol'], f))]
+                                            
+                                            for f_name in sadece_bu_klasordeki_dosyalar:
+                                                f_path = os.path.join(sonuc['yol'], f_name)
+                                                ext = f_name.split('.')[-1].lower()
+                                                try:
+                                                    with open(f_path, 'rb') as f:
+                                                        file_content = BytesIO(f.read())
+                                                    
+                                                    if ext == 'txt':
+                                                        full_text += f"\n--- {f_name} ---\n{file_content.getvalue().decode('utf-8', errors='ignore')}"
+                                                    elif ext == 'pdf':
+                                                        pdf_text = parse_pdf(file_content)
+                                                        if not pdf_text:
+                                                            file_content.seek(0)
+                                                            pdf_text = perform_ocr_gemini(file_content, "application/pdf", api_key)
+                                                        full_text += f"\n--- {f_name} ---\n{pdf_text}"
+                                                    elif ext in ['docx', 'doc']:
+                                                        full_text += f"\n--- {f_name} ---\n{extract_text_from_docx(file_content)}"
+                                                    elif ext == 'udf':
+                                                        full_text += f"\n--- {f_name} ---\n{parse_udf(file_content)}"
+                                                    elif ext in ['png', 'jpg', 'jpeg', 'tif', 'tiff']:
+                                                        mime = "image/tiff" if ext in ['tif', 'tiff'] else "image/jpeg"
+                                                        file_content.seek(0)
+                                                        ocr_res = perform_ocr_gemini(file_content, mime, api_key)
+                                                        full_text += f"\n--- {f_name} ---\n{ocr_res}"
+                                                except Exception as e:
+                                                    full_text += f"\n--- {f_name} (HATA) ---\n{str(e)}"
+                                            
+                                            st.session_state.arsiv_context = full_text
+                                            st.session_state.aktif_dosya_adi = os.path.basename(sonuc['yol'])
+                                            st.session_state.aktif_dosya_yolu = sonuc['yol']
+                                            st.rerun()
+
+if __name__ == "__main__":
+    main()
