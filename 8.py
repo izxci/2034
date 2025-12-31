@@ -422,26 +422,26 @@ def main():
     
     auto_data = extract_metadata(st.session_state.doc_text)
 
-    # --- SEKMELER (2 SATIR - TOPLAM 28 MODÜL) ---
+    # --- SEKMELER (2 SATIR - TOPLAM 31 MODÜL) ---
     
-    # 1. SATIR: Temel, Strateji ve Yeni "Şeytanın Avukatı" (15 Sekme)
+    # 1. SATIR: Temel, Strateji ve Şeytanın Avukatı (15 Sekme)
     st.markdown("### 🛠️ Temel Araçlar & Strateji")
-    # tab31 (Şeytanın Avukatı) buraya eklendi
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8,  tab25, tab26, tab29, tab30, tab31, tab9 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab24, tab25, tab26, tab29, tab30, tab31, tab9 = st.tabs([
         "📋 Analiz", "💬 Sohbet", "📕 Mevzuat", "⚖️ İçtihat", 
         "✍️ Dilekçe Yaz", "❓ Bana Sor", "🎙️ Sesli Komut", "👁️ OCR",
-        "💱 Döviz Hesabı", "🌍 Çeviri", "🛡️ Tez Çürüt", "🕵️‍♂️ Sorgu", "😈 Şeytanın Avukatı", "🤿 Dalgıç"
+        "📅 Zaman Çizelgesi", "💱 Döviz Hesabı", "🌍 Çeviri", "🛡️ Tez Çürüt", "🕵️‍♂️ Sorgu", "😈 Şeytanın Avukatı", "🤿 Dalgıç"
     ])
 
-    # 2. SATIR: Yönetim, Pro Modüller ve "Canlı Asistan" (15 Sekme)
+    # 2. SATIR: Yönetim, Pro Modüller, Canlı Asistan ve "Etki Analizi" (16 Sekme)
     st.markdown("### 🚀 Yönetim, Hesaplama & Pro Modüller")
-    # tab32 (Canlı Asistan) buraya eklendi
-    tab10, tab11, tab12, tab13, tab16, tab17, tab18, tab19, tab20, tab21, tab22, tab23, tab32 = st.tabs([
+    # tab33 (Etki Analizi) buraya eklendi
+    tab10, tab11, tab12, tab13, tab14, tab15, tab16, tab17, tab19, tab20, tab21, tab22, tab23, tab32, tab33 = st.tabs([
         "🙋 Buyur Abi", "⏰ Hatırlatıcı", "🗄️ Arşiv", "🏛️ UYAP Analiz", 
-        "🕸️ İlişki Ağı", "📝 Sözleşme Analiz", 
-        "📧 Müvekkil Bilgi", "🕵️‍♂️ KVKK Temizle", "💰 AAÜT Hesapla", "⚔️ Belge Kıyasla", 
-        "🎭 Sanal Duruşma", "✅ Görev Çıkarıcı", "⚡ Canlı Asistan"
+        "🧮 Faiz Hesabı", "⏳ Süre Hesapla", "🕸️ İlişki Ağı", "📝 Sözleşme Analiz", 
+        "🕵️‍♂️ KVKK Temizle", "💰 AAÜT Hesapla", "⚔️ Belge Kıyasla", 
+        "🎭 Sanal Duruşma", "✅ Görev Çıkarıcı", "⚡ Canlı Asistan", "📡 Etki Analizi"
     ])
+
 
 
 
@@ -1014,14 +1014,6 @@ def main():
         if st.session_state.sozlesme_analiz:
             st.markdown(st.session_state.sozlesme_analiz)
 
-    with tab18:
-        st.subheader("📧 Müvekkil Bilgilendirme")
-        durum = st.text_area("Hukuki Durum")
-        if st.button("Mesaj Oluştur") and durum:
-            if not api_key: st.error("API Key gerekli.")
-            else:
-                prompt = f"GÖREV: Bu hukuki durumu müvekkile nazikçe anlat.\nDURUM: {durum}"
-                st.info(get_ai_response(prompt, api_key))
 
     # --- YENİ MODÜLLER (TAB 19-23) ---
 
@@ -1393,6 +1385,90 @@ def main():
                         {sorgu_sonuc}
                     </div>
                     """, unsafe_allow_html=True)
+    with tab33: # Mevzuat Etki Analizi (Impact Analysis)
+        st.subheader("📡 Kişiselleştirilmiş Mevzuat Etki Analizi")
+        st.info("Takip etmek istediğiniz kanunları ve ilgili dosyalarınızı listeye ekleyin. Yeni bir değişiklik olduğunda sistem sizi özel olarak uyarır.")
+        
+        # --- 1. TAKİP LİSTESİ YÖNETİMİ ---
+        if 'mevzuat_takip_listesi' not in st.session_state:
+            st.session_state.mevzuat_takip_listesi = []
+            
+        with st.expander("➕ Yeni Takip Kuralı Ekle", expanded=True):
+            col_takip1, col_takip2, col_takip3 = st.columns(3)
+            with col_takip1:
+                takip_kanun = st.text_input("Kanun/Yönetmelik Adı", placeholder="Örn: İş Kanunu")
+            with col_takip2:
+                takip_keyword = st.text_input("Anahtar Kelime (Konu)", placeholder="Örn: Kıdem Tazminatı, Zamanaşımı")
+            with col_takip3:
+                takip_dosya = st.text_input("Etkilenecek Dosya No", placeholder="Örn: 2023/15 Esas")
+                
+            if st.button("Listeye Ekle"):
+                if takip_kanun and takip_keyword:
+                    yeni_kural = {
+                        "kanun": takip_kanun,
+                        "konu": takip_keyword,
+                        "dosya": takip_dosya
+                    }
+                    st.session_state.mevzuat_takip_listesi.append(yeni_kural)
+                    st.success(f"✅ {takip_kanun} ({takip_keyword}) takibe alındı.")
+                else:
+                    st.warning("Lütfen Kanun adı ve Konu giriniz.")
+
+        # Mevcut Listeyi Göster
+        if st.session_state.mevzuat_takip_listesi:
+            st.write("📋 **Şu An Takip Edilenler:**")
+            st.table(pd.DataFrame(st.session_state.mevzuat_takip_listesi))
+        
+        st.divider()
+        
+        # --- 2. ANALİZ MOTORU ---
+        st.write("🔍 **Değişiklik Kontrolü**")
+        yeni_mevzuat_metni = st.text_area("Yeni Resmi Gazete / Kanun Metnini Yapıştırın:", height=200, placeholder="Bugün yayınlanan kanun değişikliği metnini buraya yapıştırın...")
+        
+        if st.button("Etki Analizini Başlat", type="primary"):
+            if not api_key: st.error("API Key gerekli.")
+            elif not st.session_state.mevzuat_takip_listesi: st.warning("Takip listeniz boş. Önce yukarıdan kural ekleyin.")
+            elif not yeni_mevzuat_metni: st.warning("Analiz edilecek metni girmediniz.")
+            else:
+                with st.spinner("Takip listeniz taranıyor ve dosya eşleşmeleri yapılıyor..."):
+                    # Listeyi JSON formatına çevirip AI'ya veriyoruz
+                    takip_json = json.dumps(st.session_state.mevzuat_takip_listesi, ensure_ascii=False)
+                    
+                    prompt = f"""
+                    GÖREV: Sen bir Mevzuat Analiz Uzmanısın.
+                    
+                    GİRDİLER:
+                    1. KULLANICI TAKİP LİSTESİ: {takip_json}
+                    2. YENİ MEVZUAT METNİ: {yeni_mevzuat_metni}
+                    
+                    YAPMAN GEREKEN:
+                    Yeni metni oku. Eğer metindeki değişiklikler, kullanıcının takip listesindeki "Kanun" ve "Konu" ile eşleşiyorsa bir UYARI RAPORU oluştur.
+                    
+                    ÇIKTI FORMATI:
+                    Eğer eşleşme varsa:
+                    "🚨 **ALARM: [Dosya No] Risk Altında!**"
+                    - **Değişiklik:** [Kısaca ne değişti?]
+                    - **Etkisi:** [Bu değişiklik kullanıcının dosyasını nasıl etkiler?]
+                    - **Aksiyon:** [Avukat ne yapmalı?]
+                    
+                    Eğer eşleşme yoksa:
+                    "✅ Bu değişiklik takip listenizdeki dosyaları etkilemiyor."
+                    """
+                    
+                    analiz_sonucu = get_ai_response(prompt, api_key)
+                    
+                    if "ALARM" in analiz_sonucu or "Risk" in analiz_sonucu:
+                        st.markdown(f"""
+                        <div style="background-color:#ffe6e6; padding:20px; border-radius:10px; border-left: 5px solid #ff0000;">
+                            {analiz_sonucu}
+                        </div>
+                        """, unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"""
+                        <div style="background-color:#e6fffa; padding:20px; border-radius:10px; border-left: 5px solid #00cc99;">
+                            {analiz_sonucu}
+                        </div>
+                        """, unsafe_allow_html=True)
 
 
 
