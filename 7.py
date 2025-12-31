@@ -422,24 +422,24 @@ def main():
     
     auto_data = extract_metadata(st.session_state.doc_text)
 
-    # --- SEKMELER (2 SATIR HALİNDE DÜZENLENDİ - TOPLAM 25 MODÜL) ---
+        # --- SEKMELER (2 SATIR - TOPLAM 26 MODÜL) ---
     
-    # 1. SATIR: Temel Araçlar + Yeni Özellikler + Asistanlar (12 Sekme)
+    # 1. SATIR: Temel Araçlar + Yeni Eklenenler (13 Sekme)
     st.markdown("### 🛠️ Temel Araçlar & Ofis")
-    # Not: tab24 (Zaman) ve tab25 (Döviz) buraya eklendi.
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab24, tab25, tab9, tab10 = st.tabs([
+    # tab26 (Çeviri) buraya eklendi
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab24, tab25, tab26, tab9, tab10 = st.tabs([
         "📋 Analiz", "💬 Sohbet", "📕 Mevzuat", "⚖️ İçtihat", 
         "✍️ Dilekçe Yaz", "❓ Bana Sor", "🎙️ Sesli Komut", "👁️ OCR",
-        "📅 Zaman Çizelgesi", "💱 Döviz Hesabı", "🤿 Dalgıç", "🙋 Buyur Abi"
+        "📅 Zaman Çizelgesi", "💱 Döviz Hesabı", "🌍 Çeviri", "🤿 Dalgıç", "🙋 Buyur Abi"
     ])
 
-    # 2. SATIR: Yönetim, Hesaplama ve Pro Modüller (13 Sekme)
+    # 2. SATIR: Yönetim & Pro Modüller (13 Sekme - Değişmedi)
     st.markdown("### 🚀 Yönetim, Hesaplama & Pro Modüller")
     tab11, tab12, tab13, tab14, tab15, tab16, tab17, tab18, tab19, tab20, tab21, tab22, tab23 = st.tabs([
         "⏰ Hatırlatıcı", "🗄️ Arşiv", "🏛️ UYAP Analiz", "🧮 Faiz Hesabı", 
         "⏳ Süre Hesapla", "🕸️ İlişki Ağı", "📝 Sözleşme Analiz", "📧 Müvekkil Bilgi", 
         "🕵️‍♂️ KVKK Temizle", "💰 AAÜT Hesapla", "⚔️ Belge Kıyasla", "🎭 Sanal Duruşma", 
-        "✅ Görev Çıkarıcı"
+        "✅ Görev Çıkar"
     ])
 
     # --- TAB İÇERİKLERİ ---
@@ -1318,6 +1318,42 @@ def main():
                 </ul>
             </div>
             """, unsafe_allow_html=True)
+
+    with tab26: # Hukuki Çeviri Modülü
+        st.subheader("🌍 Hukuki Terminoloji Çevirmeni")
+        st.info("Yapay zeka, kelimeleri 'hukuki bağlamda' değerlendirerek çevirir. (Örn: Bar -> Baro, Execution -> İcra)")
+        
+        col_tr1, col_tr2 = st.columns(2)
+        with col_tr1:
+            kaynak_dil = st.selectbox("Kaynak Dil", ["Türkçe", "İngilizce", "Almanca", "Fransızca"], index=0)
+        with col_tr2:
+            hedef_dil = st.selectbox("Hedef Dil", ["İngilizce", "Türkçe", "Almanca", "Fransızca"], index=1)
+            
+        ceviri_metni = st.text_area("Çevrilecek Metni Girin:", height=150, placeholder="Metni buraya yapıştırın...")
+        
+        if st.button("Hukuki Çeviri Yap", type="primary"):
+            if not api_key: 
+                st.error("Lütfen API Key giriniz.")
+            elif not ceviri_metni:
+                st.warning("Lütfen çevrilecek bir metin giriniz.")
+            else:
+                with st.spinner("Terminoloji kontrol edilerek çevriliyor..."):
+                    prompt = f"""
+                    GÖREV: Sen uzman bir hukuk çevirmenisin. Aşağıdaki metni {kaynak_dil} dilinden {hedef_dil} diline çevir.
+                    KURAL 1: Hukuki terminolojiyi (Legal Terminology) kesinlikle koru. Günlük dil yerine resmi hukuk dili kullan.
+                    KURAL 2: Sadece çeviriyi ver, açıklama yapma.
+                    METİN: {ceviri_metni}
+                    """
+                    ceviri_sonuc = get_ai_response(prompt, api_key)
+                    
+                    st.success("Çeviri Tamamlandı:")
+                    st.markdown(f"**📄 {hedef_dil} Çıktısı:**")
+                    st.markdown(f"""
+                    <div style="background-color:#f0f2f6; padding:15px; border-radius:10px; border-left: 5px solid #ff4b4b;">
+                        {ceviri_sonuc}
+                    </div>
+                    """, unsafe_allow_html=True)
+
 
 if __name__ == "__main__":
     main()
