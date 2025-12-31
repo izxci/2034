@@ -1,10 +1,14 @@
 streamlit
 pypdf
 python-docx
+python-dotenv
+PyPDF2
 fpdf
 gTTS 
 Pillow
+matplotlib
 SpeechRecognition
 pandas 
 openpyxl
+graphviz
 google-generativeai>=0.7.0
