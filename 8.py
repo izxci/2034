@@ -422,7 +422,7 @@ def main():
     
     auto_data = extract_metadata(st.session_state.doc_text)
 
-    # --- SEKMELER (2 SATIR - TOPLAM 30 MODÜL) ---
+    # --- SEKMELER (2 SATIR - TOPLAM 28 MODÜL) ---
     
     # 1. SATIR: Temel, Strateji ve Yeni "Şeytanın Avukatı" (15 Sekme)
     st.markdown("### 🛠️ Temel Araçlar & Strateji")
@@ -436,9 +436,9 @@ def main():
     # 2. SATIR: Yönetim, Pro Modüller ve "Canlı Asistan" (15 Sekme)
     st.markdown("### 🚀 Yönetim, Hesaplama & Pro Modüller")
     # tab32 (Canlı Asistan) buraya eklendi
-    tab10, tab11, tab12, tab13, tab14, tab16, tab17, tab18, tab19, tab20, tab21, tab22, tab23, tab32 = st.tabs([
+    tab10, tab11, tab12, tab13, tab16, tab17, tab18, tab19, tab20, tab21, tab22, tab23, tab32 = st.tabs([
         "🙋 Buyur Abi", "⏰ Hatırlatıcı", "🗄️ Arşiv", "🏛️ UYAP Analiz", 
-        "⏳ Süre Hesapla", "🕸️ İlişki Ağı", "📝 Sözleşme Analiz", 
+        "🕸️ İlişki Ağı", "📝 Sözleşme Analiz", 
         "📧 Müvekkil Bilgi", "🕵️‍♂️ KVKK Temizle", "💰 AAÜT Hesapla", "⚔️ Belge Kıyasla", 
         "🎭 Sanal Duruşma", "✅ Görev Çıkarıcı", "⚡ Canlı Asistan"
     ])
@@ -987,42 +987,6 @@ def main():
                         except Exception as e: st.error(f"Hata: {str(e)}")
                     progress_bar.progress((idx + 1) / len(uyap_zips))
 
-    with tab14:
-        st.subheader("🧮 Yasal Faiz Hesaplama")
-        col_f1, col_f2 = st.columns(2)
-        with col_f1:
-            ana_para = st.number_input("Ana Para (TL)", min_value=0.0, value=10000.0, step=100.0)
-            baslangic_tarihi = st.date_input("Faiz Başlangıç Tarihi")
-        with col_f2:
-            bitis_tarihi = st.date_input("Faiz Bitiş Tarihi (Bugün)", value=datetime.now())
-            faiz_orani = st.number_input("Yıllık Faiz Oranı (%)", value=9.0, help="Yasal Faiz: %9")
-        
-        if st.button("Hesapla"):
-            if bitis_tarihi > baslangic_tarihi:
-                gun_farki = (bitis_tarihi - baslangic_tarihi).days
-                faiz_tutari = (ana_para * faiz_orani * gun_farki) / 36500
-                toplam_tutar = ana_para + faiz_tutari
-                st.info(f"İşlemiş Faiz: {faiz_tutari:,.2f} TL | Toplam: {toplam_tutar:,.2f} TL")
-
-    with tab15:
-        st.subheader("⏳ HMK/CMK Süre Hesaplayıcı")
-        col_t1, col_t2 = st.columns(2)
-        with col_t1:
-            teblig_tarihi = st.date_input("Tebliğ Tarihi")
-            sure_gun = st.number_input("Süre (Gün)", min_value=1, value=14)
-        with col_t2:
-            adli_tatil_dahil = st.checkbox("Adli Tatil Dahil Et", value=True)
-        
-        if st.button("Son Günü Bul"):
-            son_gun = teblig_tarihi + timedelta(days=sure_gun)
-            if adli_tatil_dahil:
-                yil = son_gun.year
-                if date(yil, 7, 20) <= son_gun <= date(yil, 8, 31):
-                    son_gun = date(yil, 9, 7)
-                    st.warning("Adli Tatile denk geldiği için 7 Eylül'e uzatıldı!")
-            while son_gun.weekday() > 4: # Haftasonu
-                son_gun += timedelta(days=1)
-            st.success(f"Son Gün: {son_gun.strftime('%d.%m.%Y')} ({son_gun.strftime('%A')})")
 
     with tab16:
         st.subheader("🕸️ Dosya İlişki Ağı")
