@@ -1113,7 +1113,7 @@ def main():
                             st.rerun()
 
     with tab23:
-        st.subheader("✅ Akıllı Görev Çıkarıcı")
+        st.subheader("✅ Akıllı Görev")
         st.info("Mahkeme kararından yapılacak işleri listeler.")
         
         karar_metni = st.text_area("Karar / Ara Karar Metni", height=150)
@@ -1211,33 +1211,6 @@ def main():
                         </div>
                         """, unsafe_allow_html=True)
 
-    with tab25: # Döviz Hesabı
-        st.subheader("💱 Dövizli İcra/Alacak Hesabı")
-        st.info("Kur farkı ve faiz hesabını kolaylaştırır.")
-        
-        col_d1, col_d2 = st.columns(2)
-        with col_d1:
-            doviz_miktar = st.number_input("Döviz Miktarı", min_value=0.0, value=1000.0, step=100.0)
-            para_birimi = st.selectbox("Para Birimi", ["USD", "EUR", "GBP", "CHF"])
-        with col_d2:
-            vade_tarihi_kur = st.number_input("Vade/Olay Tarihi Kuru (TL)", value=18.50)
-            guncel_kur = st.number_input("Güncel Kur / Ödeme Tarihi Kuru (TL)", value=34.20)
-            
-        if st.button("Kur Farkını Hesapla"):
-            eski_tl_karsiligi = doviz_miktar * vade_tarihi_kur
-            yeni_tl_karsiligi = doviz_miktar * guncel_kur
-            kur_farki = yeni_tl_karsiligi - eski_tl_karsiligi
-            
-            st.markdown(f"""
-            <div class="ozel-sekme">
-                <h4>📊 Hesaplama Sonucu</h4>
-                <ul>
-                    <li><b>Olay Tarihindeki Değer:</b> {eski_tl_karsiligi:,.2f} TL</li>
-                    <li><b>Bugünkü Değer:</b> {yeni_tl_karsiligi:,.2f} TL</li>
-                    <li><h3 style='color:#d32f2f'>KUR FARKI ALACAĞI: {kur_farki:,.2f} TL</h3></li>
-                </ul>
-            </div>
-            """, unsafe_allow_html=True)
 
     with tab26: # Hukuki Çeviri Modülü
         st.subheader("🌍 Hukuki Terminoloji Çevirmeni")
