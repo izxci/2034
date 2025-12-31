@@ -422,15 +422,15 @@ def main():
     
     auto_data = extract_metadata(st.session_state.doc_text)
 
-    # --- SEKMELER (2 SATIR - TOPLAM 27 MODÜL) ---
+    # --- SEKMELER (2 SATIR - TOPLAM 28 MODÜL) ---
     
-    # 1. SATIR: Temel Araçlar + Yeni Eklenenler (14 Sekme)
+    # 1. SATIR: Temel Araçlar + Strateji (15 Sekme)
     st.markdown("### 🛠️ Temel Araçlar & Strateji")
-    # tab29 (Tez Çürüt) buraya eklendi
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab24, tab25, tab26, tab29, tab9, tab10 = st.tabs([
+    # tab30 (Çapraz Sorgu) buraya eklendi
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab24, tab25, tab26, tab29, tab30, tab9, tab10 = st.tabs([
         "📋 Analiz", "💬 Sohbet", "📕 Mevzuat", "⚖️ İçtihat", 
         "✍️ Dilekçe Yaz", "❓ Bana Sor", "🎙️ Sesli Komut", "👁️ OCR",
-        "📅 Zaman Çizelgesi", "💱 Döviz Hesabı", "🌍 Çeviri", "🛡️ Tez Çürüt", "🤿 Dalgıç", "🙋 Buyur Abi"
+        "📅 Zaman Çizelgesi", "💱 Döviz Hesabı", "🌍 Çeviri", "🛡️ Tez Çürüt", "🕵️‍♂️ Sorgu", "🤿 Dalgıç", "🙋 Buyur Abi"
     ])
 
     # 2. SATIR: Yönetim & Pro Modüller (13 Sekme - Değişmedi)
@@ -439,8 +439,9 @@ def main():
         "⏰ Hatırlatıcı", "🗄️ Arşiv", "🏛️ UYAP Analiz", "🧮 Faiz Hesabı", 
         "⏳ Süre Hesapla", "🕸️ İlişki Ağı", "📝 Sözleşme Analiz", "📧 Müvekkil Bilgi", 
         "🕵️‍♂️ KVKK Temizle", "💰 AAÜT Hesapla", "⚔️ Belge Kıyasla", "🎭 Sanal Duruşma", 
-        "✅ Görevler"
+        "✅ Görev Çıkarıcı"
     ])
+
 
 
     # --- TAB İÇERİKLERİ ---
@@ -1388,6 +1389,43 @@ def main():
                     st.markdown(f"""
                     <div style="background-color:#fff3cd; padding:20px; border-radius:10px; border: 1px solid #ffeeba; color:#856404;">
                         {cevap}
+                    </div>
+                    """, unsafe_allow_html=True)
+
+    with tab30: # Çapraz Sorgu Hazırlayıcı
+        st.subheader("🕵️‍♂️ Çapraz Sorgu Hazırlayıcı (Cross-Examination)")
+        st.info("Tanık veya sanık ifadesini girin. Yapay zeka, çelişkileri bulsun ve köşeye sıkıştıran sorular hazırlasın.")
+        
+        col_sorgu1, col_sorgu2 = st.columns([2, 1])
+        with col_sorgu1:
+            ifade_metni = st.text_area("Tanık/Sanık İfadesi:", height=200, placeholder="Örn: Olay günü evdeydim, saat 20:00 gibi uyudum. Kimseyi görmedim ama sesleri duydum...")
+        with col_sorgu2:
+            st.write("🎯 **Hedefiniz Ne?**")
+            sorgu_amaci = st.radio("Sorgu Stratejisi", ["Güvenilirliği Sarsmak (Yalanını Yakala)", "Bilgi Eksikliğini Göstermek", "Önyargısını Ortaya Çıkarmak"])
+            
+        if st.button("Soruları Hazırla", type="primary"):
+            if not api_key: st.error("API Key gerekli.")
+            elif not ifade_metni: st.warning("Lütfen bir ifade metni girin.")
+            else:
+                with st.spinner("İfade analiz ediliyor, mantık hataları taranıyor..."):
+                    prompt = f"""
+                    GÖREV: Sen uzman bir ceza avukatısın. Aşağıdaki ifadeyi analiz et ve çapraz sorgu soruları hazırla.
+                    İFADE: {ifade_metni}
+                    AMACIMIZ: {sorgu_amaci}
+                    
+                    ÇIKTI FORMATI:
+                    1. [Tespit Edilen Çelişki/Zayıf Nokta]
+                       - Soru: [Tanığa sorulacak sert ve net soru]
+                       - Beklenen Cevap ve Tuzak: [Neden bu soruyu sorduk?]
+                    
+                    En az 3, en fazla 5 kritik soru hazırla.
+                    """
+                    sorgu_sonuc = get_ai_response(prompt, api_key)
+                    
+                    st.success("⚔️ Hazırlanan Çapraz Sorgu Planı:")
+                    st.markdown(f"""
+                    <div style="background-color:#e8f4f8; padding:20px; border-radius:10px; border-left: 5px solid #00a8cc;">
+                        {sorgu_sonuc}
                     </div>
                     """, unsafe_allow_html=True)
 
