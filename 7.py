@@ -1215,13 +1215,27 @@ def main():
 
     # --- YENİ EKLENEN MODÜLLER (TAB 24 & TAB 25) ---
 
-    with tab24: # Zaman Çizelgesi
+        with tab24: # Zaman Çizelgesi (GÜNCELLENDİ: Dosya yoksa metin kutusu açar)
         st.subheader("📅 Olay Zaman Çizelgesi (Timeline)")
-        st.info("Dosyadaki tarihleri ve olayları çıkarıp zaman çizelgesi oluşturur.")
+        st.info("Metindeki tarihleri ve olayları kronolojik sıraya dizer.")
         
+        # --- GÜNCELLEME: Metin Kaynağı Kontrolü ---
+        hedef_metin = ""
+        
+        # 1. Önce yüklenmiş dosya var mı diye bakar
+        if "doc_text" in st.session_state and st.session_state.doc_text and len(st.session_state.doc_text) > 10:
+            hedef_metin = st.session_state.doc_text
+            st.success("✅ Ana ekranda yüklenen dosya analiz için hazır.")
+        else:
+            # 2. Dosya yoksa manuel giriş kutusu gösterir
+            st.warning("⚠️ Herhangi bir dosya yüklenmedi. Metni aşağıya yapıştırarak devam edebilirsiniz.")
+            hedef_metin = st.text_area("Analiz edilecek metni buraya yapıştırın:", height=200, placeholder="Dava dilekçesi veya olay metnini buraya yapıştırın...")
+
         if st.button("Çizelgeyi Oluştur", type="primary"):
-            if not api_key or not st.session_state.doc_text: 
-                st.error("Lütfen önce API Key girin ve bir dosya yükleyin.")
+            if not api_key:
+                st.error("❌ Lütfen sol menüden veya üst kısımdan Google API Key giriniz.")
+            elif not hedef_metin: 
+                st.error("❌ Analiz edilecek bir metin bulunamadı. Lütfen dosya yükleyin veya metin yapıştırın.")
             else:
                 with st.spinner("Olaylar ve tarihler analiz ediliyor..."):
                     try:
@@ -1229,7 +1243,7 @@ def main():
                         prompt = f"""
                         GÖREV: Bu metindeki hukuki olayları ve tarihleri kronolojik olarak çıkar.
                         FORMAT: Sadece geçerli bir JSON array ver. Örnek: [{{"tarih": "2023-05-12", "olay": "Sözleşme İmzalandı"}}]
-                        METİN: {st.session_state.doc_text[:50000]}
+                        METİN: {hedef_metin[:50000]}
                         """
                         json_res = get_ai_response(prompt, api_key)
                         
@@ -1237,39 +1251,43 @@ def main():
                         json_res = json_res.replace("```json", "").replace("```", "").strip()
                         data = json.loads(json_res)
                         
-                        # 2. Grafiği Çiz
-                        dates = [datetime.strptime(d['tarih'], "%Y-%m-%d") for d in data]
-                        events = [d['olay'] for d in data]
-                        
-                        fig, ax = plt.subplots(figsize=(10, 5), constrained_layout=True)
-                        ax.set_title("Dosya Kronolojisi", fontsize=14, fontweight='bold')
-                        
-                        # Çizgiler ve Noktalar
-                        ax.vlines(dates, 0, 1, color="#1f77b4", alpha=0.5)
-                        ax.plot(dates, [1]*len(dates), "o", color="#1f77b4", markersize=8)
-                        
-                        # Yazılar
-                        for d, e in zip(dates, events):
-                            ax.text(d, 1.02, e, rotation=45, ha="left", fontsize=10, color="#333333")
-                        
-                        # Eksen Ayarları
-                        ax.xaxis.set_major_locator(mdates.AutoDateLocator())
-                        ax.xaxis.set_major_formatter(mdates.DateFormatter("%d.%m.%Y"))
-                        ax.spines["left"].set_visible(False)
-                        ax.spines["right"].set_visible(False)
-                        ax.spines["top"].set_visible(False)
-                        ax.yaxis.set_visible(False)
-                        plt.xticks(rotation=0)
-                        
-                        st.pyplot(fig)
-                        
-                        # Tablo Olarak da Göster
-                        st.divider()
-                        st.write("📋 **Olay Listesi**")
-                        st.table(pd.DataFrame(data))
+                        if not data:
+                            st.warning("Metinde tarihli bir olay bulunamadı.")
+                        else:
+                            # 2. Grafiği Çiz
+                            dates = [datetime.strptime(d['tarih'], "%Y-%m-%d") for d in data]
+                            events = [d['olay'] for d in data]
+                            
+                            fig, ax = plt.subplots(figsize=(10, 5), constrained_layout=True)
+                            ax.set_title("Dosya Kronolojisi", fontsize=14, fontweight='bold')
+                            
+                            # Çizgiler ve Noktalar
+                            ax.vlines(dates, 0, 1, color="#1f77b4", alpha=0.5)
+                            ax.plot(dates, [1]*len(dates), "o", color="#1f77b4", markersize=8)
+                            
+                            # Yazılar (Üst üste binmemesi için hafif kaydırma)
+                            for i, (d, e) in enumerate(zip(dates, events)):
+                                y_pos = 1.02 + (i % 3) * 0.05 # Yazıları yukarı aşağı kaydır
+                                ax.text(d, y_pos, e, rotation=45, ha="left", fontsize=9, color="#333333")
+                            
+                            # Eksen Ayarları
+                            ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+                            ax.xaxis.set_major_formatter(mdates.DateFormatter("%d.%m.%Y"))
+                            ax.spines["left"].set_visible(False)
+                            ax.spines["right"].set_visible(False)
+                            ax.spines["top"].set_visible(False)
+                            ax.yaxis.set_visible(False)
+                            plt.xticks(rotation=0)
+                            
+                            st.pyplot(fig)
+                            
+                            # Tablo Olarak da Göster
+                            st.divider()
+                            st.write("📋 **Olay Listesi**")
+                            st.table(pd.DataFrame(data))
                         
                     except Exception as e:
-                        st.error(f"Grafik oluşturulamadı. AI çıktısı uygun formatta olmayabilir.\nHata: {str(e)}")
+                        st.error(f"Grafik oluşturulamadı. Hata: {str(e)}")
                         st.warning("AI Ham Çıktısı:")
                         st.code(json_res)
 
