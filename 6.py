@@ -418,23 +418,20 @@ def main():
     
     auto_data = extract_metadata(st.session_state.doc_text)
 
-    # --- SEKMELER (3 SATIR HALİNDE DÜZENLENDİ) ---
-    st.markdown("### 🛠️ Temel Araçlar")
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
-        "📋 Analiz", "💬 Sohbet", "📕 Mevzuat", "⚖️ İçtihat", 
-        "✍️ Dilekçe Yaz", "❓ Bana Sor", "🎙️ Sesli Komut", "👁️ OCR"
-    ])
+       # --- SEKMELER (2 SATIR HALİNDE DÜZENLENDİ) ---
     
-    st.markdown("### 🚀 Gelişmiş Araçlar")
-    tab9, tab10, tab11, tab12, tab13, tab14, tab15, tab16 = st.tabs([
-        "🤿 Dalgıç", "🙋 Buyur Abi", "⏰ Hatırlatıcı", "🗄️ Arşiv", 
-        "🏛️ UYAP Analiz", "🧮 Faiz Hesabı", "⏳ Süre Hesapla", "🕸️ İlişki Ağı"
+    # 1. SATIR: Temel Araçlar ve Asistanlar (12 Sekme)
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12 = st.tabs([
+        "📋 Analiz", "💬 Sohbet", "📕 Mevzuat", "⚖️ İçtihat", 
+        "✍️ Dilekçe Yaz", "❓ Bana Sor", "🎙️ Sesli Komut", "👁️ OCR", 
+        "🤿 Dalgıç", "🙋 Buyur Abi", "⏰ Hatırlatıcı", "🗄️ Arşiv"
     ])
 
-    st.markdown("### 💎 Pro Modüller")
-    tab17, tab18, tab19, tab20, tab21, tab22, tab23 = st.tabs([
-        "📝 Sözleşme Analiz", "📧 Müvekkil Bilgi", "🕵️‍♂️ KVKK Temizle", 
-        "💰 AAÜT Hesapla", "⚔️ Belge Kıyasla", "🎭 Sanal Duruşma", "✅ Görev Çıkarıcı"
+    # 2. SATIR: Hesaplama, Analiz ve Pro Modüller (11 Sekme)
+    tab13, tab14, tab15, tab16, tab17, tab18, tab19, tab20, tab21, tab22, tab23 = st.tabs([
+        "🏛️ UYAP Analiz", "🧮 Faiz Hesabı", "⏳ Süre Hesapla", "🕸️ İlişki Ağı", 
+        "📝 Sözleşme Analiz", "📧 Müvekkil Bilgi", "🕵️‍♂️ KVKK Temizle", "💰 AAÜT Hesapla", 
+        "⚔️ Belge Kıyasla", "🎭 Sanal Duruşma", "✅ Görev Çıkarıcı"
     ])
 
     # --- TAB İÇERİKLERİ ---
