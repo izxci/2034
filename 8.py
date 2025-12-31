@@ -426,10 +426,10 @@ def main():
     
     # 1. SATIR: Temel, Strateji ve Şeytanın Avukatı (15 Sekme)
     st.markdown("### 🛠️ Temel Araçlar & Strateji")
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab25, tab26, tab29, tab30, tab31, tab9 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab26, tab29, tab30, tab31, tab9 = st.tabs([
         "📋 Analiz", "💬 Sohbet", "📕 Mevzuat", "⚖️ İçtihat", 
         "✍️ Dilekçe Yaz", "❓ Bana Sor", "🎙️ Sesli Komut", "👁️ OCR",
-        "📅 Zaman Çizelgesi", "🌍 Çeviri", "🛡️ Tez Çürüt", "🕵️‍♂️ Sorgu", "😈 Şeytanın Avukatı", "🤿 Dalgıç"
+        "🌍 Çeviri", "🛡️ Tez Çürüt", "🕵️‍♂️ Sorgu", "😈 Şeytanın Avukatı", "🤿 Dalgıç"
     ])
 
     # 2. SATIR: Yönetim, Pro Modüller, Canlı Asistan ve "Etki Analizi" (16 Sekme)
@@ -1134,7 +1134,6 @@ def main():
             if st.button("Listeyi Kopyala"):
                 st.toast("Görev listesi kopyalandı!")
 
-    # --- YENİ EKLENEN MODÜLLER (TAB 24 & TAB 25) ---
 
     with tab31: # Şeytanın Avukatı (Devil's Advocate)
         st.subheader("😈 Şeytanın Avukatı (AI Adversary)")
