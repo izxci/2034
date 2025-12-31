@@ -1215,7 +1215,7 @@ def main():
 
     # --- YENİ EKLENEN MODÜLLER (TAB 24 & TAB 25) ---
 
-        with tab24: # Zaman Çizelgesi (GÜNCELLENDİ: Dosya yoksa metin kutusu açar)
+    with tab24: # Zaman Çizelgesi (GÜNCELLENDİ: Dosya yoksa metin kutusu açar)
         st.subheader("📅 Olay Zaman Çizelgesi (Timeline)")
         st.info("Metindeki tarihleri ve olayları kronolojik sıraya dizer.")
         
