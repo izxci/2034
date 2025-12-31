@@ -435,7 +435,7 @@ def main():
     # 2. SATIR: Yönetim, Pro Modüller, Canlı Asistan ve "Etki Analizi" (16 Sekme)
     st.markdown("### 🚀 Yönetim, Hesaplama & Pro Modüller")
     # tab33 (Etki Analizi) buraya eklendi
-    tab10, tab11, tab12, tab13, tab14, tab15, tab16, tab17, tab19, tab21, tab22, tab23, tab32, tab33 = st.tabs([
+    tab10, tab11, tab12, tab13, tab16, tab17, tab19, tab21, tab22, tab23, tab32, tab33 = st.tabs([
         "🙋 Buyur Abi", "⏰ Hatırlatıcı", "🗄️ Arşiv", "🏛️ UYAP Analiz", 
         "🕸️ İlişki Ağı", "📝 Sözleşme Analiz", 
         "🕵️‍♂️ KVKK Temizle",  "⚔️ Belge Kıyasla", "🎭 Sanal Duruşma", "✅ Görev Çıkarıcı", "⚡ Canlı Asistan", "📡 Etki Analizi"
