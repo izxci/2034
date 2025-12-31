@@ -437,9 +437,8 @@ def main():
     # tab33 (Etki Analizi) buraya eklendi
     tab10, tab11, tab12, tab13, tab14, tab15, tab16, tab17, tab19, tab21, tab22, tab23, tab32, tab33 = st.tabs([
         "🙋 Buyur Abi", "⏰ Hatırlatıcı", "🗄️ Arşiv", "🏛️ UYAP Analiz", 
-        "🧮 Faiz Hesabı", "⏳ Süre Hesapla", "🕸️ İlişki Ağı", "📝 Sözleşme Analiz", 
-        "🕵️‍♂️ KVKK Temizle", "💰 AAÜT Hesapla", "⚔️ Belge Kıyasla", 
-        "🎭 Sanal Duruşma", "✅ Görev Çıkarıcı", "⚡ Canlı Asistan", "📡 Etki Analizi"
+        "🕸️ İlişki Ağı", "📝 Sözleşme Analiz", 
+        "🕵️‍♂️ KVKK Temizle",  "⚔️ Belge Kıyasla", "🎭 Sanal Duruşma", "✅ Görev Çıkarıcı", "⚡ Canlı Asistan", "📡 Etki Analizi"
     ])
 
 
