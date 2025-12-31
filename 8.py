@@ -1042,32 +1042,177 @@ def main():
 
 
 
-    with tab21:
-        st.subheader("⚔️ Belge Kıyaslama (Diff Tool)")
-        st.info("İki metin arasındaki farkları bulur.")
+    with tab21: # Belge Kıyasla & Mevzuat Diff Motoru (Gelişmiş)
+        st.subheader("⚖️ Mevzuat ve Sözleşme Diff Motoru (Git-Style)")
+        st.info("Eski ve yeni versiyonları karşılaştırın. İster metin yapıştırın, ister PDF/Word/Resim dosyası yükleyin. Sistem OCR desteklidir.")
+
+        # Yardımcı Fonksiyon: Dosyadan Metin Okuma (OCR Dahil)
+        def get_file_content(uploaded_file):
+            if uploaded_file is None: return ""
+            
+            # Kütüphaneleri güvenli çağır
+            import io
+            try: import PyPDF2
+            except: PyPDF2 = None
+            try: from docx import Document
+            except: Document = None
+            try: from PIL import Image; import pytesseract
+            except: Image = None; pytesseract = None
+
+            filename = uploaded_file.name
+            ext = filename.split('.')[-1].lower()
+            text_result = ""
+
+            try:
+                # PDF
+                if ext == 'pdf':
+                    if PyPDF2:
+                        reader = PyPDF2.PdfReader(uploaded_file)
+                        for page in reader.pages:
+                            text_result += page.extract_text() + "\n"
+                    else: return "[Hata: PyPDF2 eksik]"
+                
+                # WORD
+                elif ext == 'docx':
+                    if Document:
+                        doc = Document(uploaded_file)
+                        for para in doc.paragraphs:
+                            text_result += para.text + "\n"
+                    else: return "[Hata: python-docx eksik]"
+                
+                # RESİM (OCR)
+                elif ext in ['png', 'jpg', 'jpeg', 'tiff', 'tif', 'bmp', 'img']:
+                    if Image and pytesseract:
+                        img = Image.open(uploaded_file)
+                        # Türkçe OCR denemesi
+                        try: text_result = pytesseract.image_to_string(img, lang='tur')
+                        except: text_result = pytesseract.image_to_string(img)
+                    else: return "[Hata: OCR kütüphaneleri eksik]"
+                
+                # TXT / UDF
+                elif ext in ['txt', 'udf', 'xml']:
+                    stringio = io.StringIO(uploaded_file.getvalue().decode("utf-8", errors='ignore'))
+                    text_result = stringio.read()
+                
+                # Desteklenmeyen/Binary
+                else:
+                    text_result = "[Bu dosya formatından metin okunamadı]"
+
+            except Exception as e:
+                return f"[Okuma Hatası: {str(e)}]"
+            
+            return text_result
+
+        # --- ARAYÜZ TASARIMI ---
         col_diff1, col_diff2 = st.columns(2)
+
+        # SOL SÜTUN: ESKİ METİN (MÜLGA)
         with col_diff1:
-            text1 = st.text_area("Orijinal Metin", height=200, placeholder="Eski versiyonu buraya yapıştırın...")
+            st.markdown("#### 🔴 Eski Metin (Mülga/Eski Versiyon)")
+            input_type_1 = st.radio("Giriş Yöntemi:", ["✍️ Metin Yapıştır", "📂 Dosya Yükle"], key="radio_diff_1", horizontal=True)
+            
+            old_text_content = ""
+            
+            if input_type_1 == "✍️ Metin Yapıştır":
+                old_text_content = st.text_area("Metni Buraya Yapıştırın", height=300, key="text_diff_1", placeholder="Eski maddeyi buraya girin...")
+            else:
+                file_1 = st.file_uploader("Dosya Seç (PDF, Word, Resim)", type=['pdf','docx','txt','png','jpg','jpeg','tif','tiff'], key="file_diff_1")
+                if file_1:
+                    with st.spinner("Dosya okunuyor..."):
+                        old_text_content = get_file_content(file_1)
+                        st.success(f"Dosya okundu: {len(old_text_content)} karakter")
+                        with st.expander("Okunan Metni Gör"):
+                            st.text(old_text_content[:1000] + "...")
+
+        # SAĞ SÜTUN: YENİ METİN (MER'İ)
         with col_diff2:
-            text2 = st.text_area("Yeni Metin", height=200, placeholder="Yeni versiyonu buraya yapıştırın...")
-        
-        if st.button("Farkları Göster"):
-            if text1 and text2:
-                d = difflib.Differ()
-                diff = list(d.compare(text1.splitlines(), text2.splitlines()))
+            st.markdown("#### 🟢 Yeni Metin (Mer'i/Yeni Versiyon)")
+            input_type_2 = st.radio("Giriş Yöntemi:", ["✍️ Metin Yapıştır", "📂 Dosya Yükle"], key="radio_diff_2", horizontal=True)
+            
+            new_text_content = ""
+            
+            if input_type_2 == "✍️ Metin Yapıştır":
+                new_text_content = st.text_area("Metni Buraya Yapıştırın", height=300, key="text_diff_2", placeholder="Yeni maddeyi buraya girin...")
+            else:
+                file_2 = st.file_uploader("Dosya Seç (PDF, Word, Resim)", type=['pdf','docx','txt','png','jpg','jpeg','tif','tiff'], key="file_diff_2")
+                if file_2:
+                    with st.spinner("Dosya okunuyor..."):
+                        new_text_content = get_file_content(file_2)
+                        st.success(f"Dosya okundu: {len(new_text_content)} karakter")
+                        with st.expander("Okunan Metni Gör"):
+                            st.text(new_text_content[:1000] + "...")
+
+        st.divider()
+
+        # --- ANALİZ BUTONU ---
+        if st.button("⚡ Farkları Bul ve Hukuki Etkiyi Analiz Et", use_container_width=True):
+            if not old_text_content or not new_text_content:
+                st.warning("Lütfen her iki taraf için de metin girin veya dosya yükleyin.")
+            else:
+                import difflib
+
+                # 1. GÖRSEL DIFF OLUŞTURMA
+                a = old_text_content.split()
+                b = new_text_content.split()
                 
-                html_diff = ""
-                for line in diff:
-                    if line.startswith('+ '):
-                        html_diff += f"<div style='color:green; background-color:#e8f5e9'><b>+ EKLENDİ:</b> {line[2:]}</div>"
-                    elif line.startswith('- '):
-                        html_diff += f"<div style='color:red; background-color:#ffebee; text-decoration: line-through'><b>- SİLİNDİ:</b> {line[2:]}</div>"
-                    elif line.startswith('? '):
-                        continue
-                    else:
-                        html_diff += f"<div style='color:gray'>{line[2:]}</div>"
+                matcher = difflib.SequenceMatcher(None, a, b)
+                html_diff = []
                 
-                st.markdown(html_diff, unsafe_allow_html=True)
+                for opcode, a0, a1, b0, b1 in matcher.get_opcodes():
+                    if opcode == 'equal':
+                        html_diff.append(" ".join(a[a0:a1]))
+                    elif opcode == 'insert':
+                        html_diff.append(f"<span style='background-color:#d4edda; color:#155724; padding:2px; border-radius:3px; font-weight:bold; border:1px solid #c3e6cb;'>{' '.join(b[b0:b1])}</span>")
+                    elif opcode == 'delete':
+                        html_diff.append(f"<span style='background-color:#f8d7da; color:#721c24; text-decoration:line-through; padding:2px; border-radius:3px; opacity: 0.7;'>{' '.join(a[a0:a1])}</span>")
+                    elif opcode == 'replace':
+                        html_diff.append(f"<span style='background-color:#f8d7da; color:#721c24; text-decoration:line-through; padding:2px; opacity: 0.7;'>{' '.join(a[a0:a1])}</span> <span style='background-color:#d4edda; color:#155724; font-weight:bold; border:1px solid #c3e6cb; padding:2px;'>{' '.join(b[b0:b1])}</span>")
+                
+                diff_result = " ".join(html_diff)
+
+                st.markdown("### 🔍 Detaylı Karşılaştırma Raporu")
+                st.markdown(f"""
+                <div style="border:1px solid #ccc; padding:25px; border-radius:10px; line-height: 1.8; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #fafafa;">
+                    {diff_result}
+                </div>
+                <div style="margin-top:10px; font-size:0.85em; color:gray; text-align: right;">
+                    <span style='background-color:#f8d7da; color:#721c24; padding:3px 8px; border-radius:4px;'>🔴 Silinen İfade</span> 
+                    <span style='background-color:#d4edda; color:#155724; padding:3px 8px; border-radius:4px; margin-left:10px;'>🟢 Eklenen İfade</span>
+                </div>
+                """, unsafe_allow_html=True)
+
+                # 2. YAPAY ZEKA ETKİ ANALİZİ
+                if api_key:
+                    st.divider()
+                    with st.spinner("Yapay zeka hukuki sonuçları ve içtihat etkilerini hesaplıyor..."):
+                        prompt = f"""
+                        GÖREV: Sen kıdemli bir hukukçusun. Aşağıdaki iki metin arasındaki farkları analiz et.
+                        
+                        ESKİ VERSİYON:
+                        {old_text_content[:4000]} 
+                        
+                        YENİ VERSİYON:
+                        {new_text_content[:4000]}
+                        (Not: Metinler çok uzunsa ilk 4000 karakter alınmıştır)
+                        
+                        ANALİZ İSTEĞİ:
+                        1. **Değişiklik Özeti:** Ne değişti? (Tek cümle)
+                        2. **Hukuki Yorum Farkı:** Bu değişiklik anlamı nasıl kaydırdı? (Örn: "Zorunluluk"tan "Takdir yetkisi"ne geçiş vb.)
+                        3. **Risk Analizi:** Yeni metin hangi riskleri doğuruyor veya hangi açıkları kapatıyor?
+                        4. **İçtihat Etkisi:** Eski Yargıtay kararları bu yeni metinle geçersiz kalır mı?
+                        """
+                        
+                        analiz = get_ai_response(prompt, api_key)
+                        
+                        st.markdown("### 🧠 Yapay Zeka Hukuki Etki Analizi")
+                        st.markdown(f"""
+                        <div style="background-color:#fff3cd; padding:20px; border-radius:10px; border-left: 5px solid #ffc107;">
+                            {analiz}
+                        </div>
+                        """, unsafe_allow_html=True)
+                else:
+                    st.warning("Detaylı etki analizi için API Key gereklidir.")
+
 
     with tab22:
         st.subheader("🎭 Sanal Duruşma Simülasyonu")
