@@ -1402,16 +1402,17 @@ def main():
                             {analiz_sonucu}
                         </div>
                         """, unsafe_allow_html=True)
-    with tab34: # Semantik Arşiv Sorgulama (RAG) - OCR Destekli (Final Düzeltme)
+    with tab34: # Semantik Arşiv Sorgulama (RAG) - OCR Destekli (Düzeltilmiş)
         st.subheader("🧠 Semantik Arşiv (OCR & Çoklu Format)")
         st.info("PDF, Word, UDF, TXT ve Resim (JPG, PNG) dosyalarını yükleyin. Sistem görselleri okur (OCR), metinleri tarar ve sorunuzun cevabını dosya adıyla birlikte verir.")
         
-        # Dosya Yükleme Alanı (Listeyi doğrudan buraya yazdık ve 'key' ekledik)
+        # Dosya Yükleme Alanı
+        # DÜZELTME: 'accept_multiple' yerine 'accept_multiple_files' kullanıldı.
         uploaded_archive = st.file_uploader(
             "Arşive Eklenecek Dosyalar", 
-            accept_multiple=True, 
+            accept_multiple_files=True, 
             type=["pdf", "txt", "docx", "doc", "udf", "png", "jpg", "jpeg", "tiff", "bmp"],
-            key="rag_file_uploader_unique_key"
+            key="rag_file_uploader_final"
         )
         
         # Oturum bazlı hafıza
@@ -1419,7 +1420,7 @@ def main():
             st.session_state.archive_memory = ""
             
         if uploaded_archive:
-            if st.button("📂 Dosyaları Tara, OCR Yap ve Hafızaya Al", key="rag_process_btn"):
+            if st.button("📂 Dosyaları Tara, OCR Yap ve Hafızaya Al", key="rag_process_btn_final"):
                 # Gerekli kütüphaneleri güvenli şekilde çağırıyoruz
                 import io
                 
@@ -1531,9 +1532,9 @@ def main():
         # Soru Sorma Alanı
         col_rag1, col_rag2 = st.columns([3, 1])
         with col_rag1:
-            rag_soru = st.text_input("Arşive Soru Sor:", placeholder="Örn: 'Tapu iptal davasında bilirkişi raporu kime tebliğ edilmiş?'", key="rag_question_input")
+            rag_soru = st.text_input("Arşive Soru Sor:", placeholder="Örn: 'Tapu iptal davasında bilirkişi raporu kime tebliğ edilmiş?'", key="rag_question_input_final")
         with col_rag2:
-            rag_btn = st.button("🧠 Hafızayı Tara", key="rag_search_btn")
+            rag_btn = st.button("🧠 Hafızayı Tara", key="rag_search_btn_final")
             
         if rag_btn:
             if not api_key: st.error("API Key gerekli.")
@@ -1568,6 +1569,7 @@ def main():
                         {rag_cevap}
                     </div>
                     """, unsafe_allow_html=True)
+
 
 
 
