@@ -426,10 +426,10 @@ def main():
     
     # 1. SATIR: Temel, Strateji ve Şeytanın Avukatı (15 Sekme)
     st.markdown("### 🛠️ Temel Araçlar & Strateji")
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab26, tab29, tab30, tab31, tab9, tab34 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab26, tab29, tab30, tab31, tab9, tab34, tab35 = st.tabs([
         "📋 Analiz", "💬 Sohbet", "📕 Mevzuat", "⚖️ İçtihat", 
         "✍️ Dilekçe Yaz", "❓ Bana Sor", "🎙️ Sesli Komut", "👁️ OCR",
-        "🌍 Çeviri", "🛡️ Tez Çürüt", "🕵️‍♂️ Sorgu", "😈 Şeytanın Avukatı", "🤿 Dalgıç", "🧠 Semantik Arşiv"
+        "🌍 Çeviri", "🛡️ Tez Çürüt", "🕵️‍♂️ Sorgu", "😈 Şeytanın Avukatı", "🤿 Dalgıç", "🧠 Semantik Arşiv", "🎙️ Canlı Duruşma",
     ])
 
     # 2. SATIR: Yönetim, Pro Modüller, Canlı Asistan ve "Etki Analizi" (16 Sekme)
@@ -1716,6 +1716,114 @@ def main():
                     """, unsafe_allow_html=True)
 
 
+    with tab35: # Sesli Duruşma Analizi & Çelişki Alarmı
+        st.subheader("🎙️ Duruşma Asistanı: Canlı Çelişki Yakalayıcı")
+        st.info("Tanığın önceki ifadesini (Referans Metin) girin ve duruşma ses kaydını yükleyin. Sistem, söylenenleri metne çevirir ve eski ifadeyle çelişen noktaları 'Kırmızı Alarm' olarak bildirir.")
+
+        col_voice1, col_voice2 = st.columns([1, 1])
+
+        # 1. ADIM: REFERANS METİN (Eski İfade)
+        with col_voice1:
+            st.markdown("### 1. Referans Belge (Eski İfade)")
+            ref_text = st.text_area(
+                "Emniyet/Savcılık İfadesini Buraya Yapıştırın:", 
+                height=250, 
+                placeholder="Örn: Olay günü saat 14:00'te evdeydim. Yanımda kimse yoktu. Arabamın rengi mavidir..."
+            )
+
+        # 2. ADIM: DURUŞMA SES KAYDI (Yeni Beyan)
+        with col_voice2:
+            st.markdown("### 2. Duruşma Kaydı (Canlı Beyan)")
+            # Ses dosyası yükleme
+            audio_file = st.file_uploader("Ses Kaydını Yükle (WAV/FLAC)", type=["wav", "flac"])
+            
+            # Alternatif: Canlı kayıt simülasyonu için metin girişi (Ses işleme hatası olursa diye)
+            st.markdown("--- veya ---")
+            manual_transcript = st.text_area("Ses kaydı yoksa, tanığın şu anki sözlerini yazın:", height=100, placeholder="Örn: Olay günü saat 16:00'da dışarıdaydım. Arabam beyaz renklidir.")
+
+        st.divider()
+
+        if st.button("🚨 Çapraz Sorgu Başlat ve Çelişkileri Tara"):
+            if not ref_text:
+                st.warning("Lütfen karşılaştırma yapmak için eski ifadeyi girin.")
+            elif not audio_file and not manual_transcript:
+                st.warning("Lütfen duruşma ses kaydı yükleyin veya metin girin.")
+            else:
+                current_statement = ""
+                
+                # A) SES İŞLEME (Speech-to-Text)
+                if audio_file:
+                    with st.spinner("Ses dosyası metne dönüştürülüyor (Transkripsiyon)..."):
+                        try:
+                            import speech_recognition as sr
+                            r = sr.Recognizer()
+                            with sr.AudioFile(audio_file) as source:
+                                audio_data = r.record(source)
+                                # Google Speech API (Ücretsiz versiyon)
+                                try:
+                                    current_statement = r.recognize_google(audio_data, language='tr-TR')
+                                    st.success("Ses başarıyla metne çevrildi!")
+                                    with st.expander("Duruşma Transkriptini Gör"):
+                                        st.write(current_statement)
+                                except sr.UnknownValueError:
+                                    st.error("Ses anlaşılamadı.")
+                                except sr.RequestError:
+                                    st.error("Google Speech API'ye erişilemedi.")
+                        except ImportError:
+                            st.error("SpeechRecognition kütüphanesi yüklü değil.")
+                        except Exception as e:
+                            st.error(f"Ses işleme hatası: {e} (Lütfen .WAV formatı deneyin)")
+                
+                # B) MANUEL GİRİŞ VARSA
+                if manual_transcript:
+                    current_statement = manual_transcript
+
+                # C) YAPAY ZEKA İLE ÇELİŞKİ ANALİZİ
+                if current_statement and api_key:
+                    with st.spinner("🕵️ Yapay Zeka ifadeleri çapraz sorguya tutuyor..."):
+                        prompt = f"""
+                        GÖREV: Sen duruşma salonundaki çok dikkatli bir avukatsın.
+                        Amacın: Tanığın şu anki beyanları ile geçmişteki ifadesi arasındaki ÇELİŞKİLERİ yakalamak.
+                        
+                        1. GEÇMİŞ İFADE (REFERANS):
+                        "{ref_text}"
+                        
+                        2. ŞU ANKİ BEYAN (DURUŞMA):
+                        "{current_statement}"
+                        
+                        ANALİZ KURALLARI:
+                        - Sadece bariz çelişkileri bul (Örn: "Mavi" dedi, şimdi "Beyaz" diyor).
+                        - Ufak kelime farklarını önemseme.
+                        - Çıktıyı şu formatta ver:
+                        
+                        ALARM: [Çelişki Başlığı]
+                        DETAY: Tanık daha önce "[Eski Bilgi]" demişti, ancak şu an "[Yeni Bilgi]" diyor.
+                        ÖNERİ: Avukat şu soruyu sormalı: "[Soru Önerisi]"
+                        """
+                        
+                        analiz_sonucu = get_ai_response(prompt, api_key)
+                        
+                        # Sonuç Gösterimi
+                        st.markdown("### 🚨 Çelişki Tespit Raporu")
+                        
+                        # Eğer AI "Çelişki yok" derse yeşil, varsa kırmızı gösterelim
+                        if "yok" in analiz_sonucu.lower() and len(analiz_sonucu) < 50:
+                            st.success("✅ İfadeler arasında bariz bir çelişki tespit edilmedi.")
+                        else:
+                            # Çelişki Kartları
+                            st.markdown(f"""
+                            <div style="background-color:#ffe6e6; border-left: 6px solid #ff0000; padding:20px; border-radius:10px;">
+                                <h4 style="color:#cc0000; margin-top:0;">⚠️ DİKKAT: İFADE DEĞİŞİKLİĞİ TESPİT EDİLDİ</h4>
+                                <div style="font-size:1.1em; line-height:1.6; color:#333;">
+                                    {analiz_sonucu.replace(chr(10), '<br>')}
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                            st.info("💡 İpucu: Bu raporu tabletinizde açık tutarak duruşma sırasında anlık müdahale edebilirsiniz.")
+                
+                elif not api_key:
+                    st.error("Analiz için API Key gereklidir.")
 
 
 
