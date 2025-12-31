@@ -429,7 +429,7 @@ def main():
     tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab26, tab29, tab30, tab31, tab9 = st.tabs([
         "📋 Analiz", "💬 Sohbet", "📕 Mevzuat", "⚖️ İçtihat", 
         "✍️ Dilekçe Yaz", "❓ Bana Sor", "🎙️ Sesli Komut", "👁️ OCR",
-        "🌍 Çeviri", "🛡️ Tez Çürüt", "🕵️‍♂️ Sorgu", "😈 Şeytanın Avukatı", "🤿 Dalgıç"
+        "🌍 Çeviri", "🛡️ Tez Çürüt", "🕵️‍♂️ Sorgu", "😈 Şeytanın Avukatı", "🤿 Dalgıç", "🧠 Semantik Arşiv"
     ])
 
     # 2. SATIR: Yönetim, Pro Modüller, Canlı Asistan ve "Etki Analizi" (16 Sekme)
@@ -1402,6 +1402,142 @@ def main():
                             {analiz_sonucu}
                         </div>
                         """, unsafe_allow_html=True)
+    with tab34: # Semantik Arşiv Sorgulama (RAG) - OCR Destekli
+        st.subheader("🧠 Semantik Arşiv (OCR & Çoklu Format)")
+        st.info("PDF, Word, UDF, TXT ve Resim (JPG, PNG) dosyalarını yükleyin. Sistem görselleri okur (OCR), metinleri tarar ve sorunuzun cevabını dosya adıyla birlikte verir.")
+        
+        # Genişletilmiş Dosya Yükleme Alanı
+        uploaded_archive = st.file_uploader(
+            "Arşive Eklenecek Dosyalar", 
+            accept_multiple=True, 
+            type=['pdf', 'txt', 'docx', 'doc', 'udf', 'png', 'jpg', 'jpeg', 'tiff', 'bmp']
+        )
+        
+        # Oturum bazlı hafıza
+        if 'archive_memory' not in st.session_state:
+            st.session_state.archive_memory = ""
+            
+        if uploaded_archive:
+            if st.button("📂 Dosyaları Tara, OCR Yap ve Hafızaya Al"):
+                import PyPDF2
+                from docx import Document # python-docx kütüphanesi
+                from PIL import Image # Resim işleme
+                import pytesseract # OCR kütüphanesi
+                import io
+
+                tum_metin = ""
+                basarili_dosya = 0
+                progress_bar = st.progress(0)
+                
+                st.toast("Dosyalar işleniyor, OCR motoru çalıştırılıyor...", icon="⚙️")
+
+                for i, file in enumerate(uploaded_archive):
+                    file_name = file.name
+                    file_ext = file_name.split('.')[-1].lower()
+                    file_content = ""
+                    
+                    try:
+                        # 1. PDF OKUMA
+                        if file_ext == 'pdf':
+                            try:
+                                pdf_reader = PyPDF2.PdfReader(file)
+                                for page in pdf_reader.pages:
+                                    text = page.extract_text()
+                                    if text: file_content += text + "\n"
+                            except:
+                                file_content = "[Bu PDF okunamadı veya şifreli]"
+
+                        # 2. WORD (DOCX) OKUMA
+                        elif file_ext == 'docx':
+                            try:
+                                doc = Document(file)
+                                for para in doc.paragraphs:
+                                    file_content += para.text + "\n"
+                            except:
+                                file_content = "[DOCX formatı okunamadı]"
+                        
+                        # 3. RESİM DOSYALARI (OCR İŞLEMİ)
+                        elif file_ext in ['png', 'jpg', 'jpeg', 'tiff', 'bmp', 'img']:
+                            try:
+                                image = Image.open(file)
+                                # Tesseract ile resimden yazıya (Türkçe)
+                                # Not: Tesseract yüklü değilse hata verebilir, try-except ile yakalıyoruz
+                                file_content = pytesseract.image_to_string(image, lang='tur')
+                                if not file_content: file_content = "[Resimde okunabilir metin bulunamadı]"
+                            except Exception as e_ocr:
+                                file_content = f"[OCR Hatası: Tesseract kütüphanesi bulunamadı veya resim bozuk. Detay: {e_ocr}]"
+
+                        # 4. UDF (UYAP) ve TXT OKUMA
+                        elif file_ext in ['txt', 'udf', 'xml']:
+                            try:
+                                stringio = io.StringIO(file.getvalue().decode("utf-8", errors='ignore'))
+                                file_content = stringio.read()
+                            except:
+                                file_content = "[Metin dosyası okunamadı]"
+                        
+                        # 5. ESKİ WORD (DOC) - Genelde binary olduğu için zordur, basit okuma denenir
+                        elif file_ext == 'doc':
+                             file_content = "[.doc formatı binary olduğu için tam desteklenmiyor, lütfen .docx'e çevirip yükleyin.]"
+
+                        # Metni Hafızaya Ekle (Dosya etiketiyle)
+                        if len(file_content) > 10: # Çok kısa veya boş içerikleri alma
+                            tum_metin += f"\n{'='*20}\n📂 DOSYA ADI: {file_name}\n{'='*20}\n{file_content}\n"
+                            basarili_dosya += 1
+                        
+                    except Exception as e:
+                        st.error(f"Hata ({file_name}): {e}")
+                    
+                    # İlerleme çubuğunu güncelle
+                    progress_bar.progress((i + 1) / len(uploaded_archive))
+                
+                st.session_state.archive_memory = tum_metin
+                if basarili_dosya > 0:
+                    st.success(f"✅ {basarili_dosya} dosya başarıyla işlendi, OCR yapıldı ve hafızaya alındı!")
+                else:
+                    st.warning("Hiçbir dosyadan anlamlı veri okunamadı.")
+
+        st.divider()
+        
+        # Soru Sorma Alanı
+        col_rag1, col_rag2 = st.columns([3, 1])
+        with col_rag1:
+            rag_soru = st.text_input("Arşive Soru Sor:", placeholder="Örn: 'Tapu iptal davasında bilirkişi raporu kime tebliğ edilmiş?' veya 'Fotoğraftaki plakayı bul'")
+        with col_rag2:
+            rag_btn = st.button("🧠 Hafızayı Tara")
+            
+        if rag_btn:
+            if not api_key: st.error("API Key gerekli.")
+            elif not st.session_state.archive_memory: st.warning("Önce dosya yükleyip işleyin.")
+            elif not rag_soru: st.warning("Soru girmediniz.")
+            else:
+                with st.spinner("Dosyalar taranıyor, anlam analizi yapılıyor..."):
+                    prompt = f"""
+                    GÖREV: Sen uzman bir Hukuk Arşiv Asistanısın.
+                    
+                    BAĞLAM (ARCHIVE):
+                    Aşağıda kullanıcının yüklediği dosyaların içerikleri var (OCR ile okunmuş metinler dahil):
+                    {st.session_state.archive_memory}
+                    
+                    SORU: {rag_soru}
+                    
+                    KURALLAR:
+                    1. Cevabı sadece yukarıdaki bağlama göre ver.
+                    2. Bilgiyi bulduğunda MUTLAKA dosya adını belirt. (Örn: "Bu bilgi 'tutanak.jpg' dosyasında geçmektedir.")
+                    3. Cevabı şu formatta ver:
+                       - **Bulunan Bilgi:** [Cevap]
+                       - **Kaynak Dosya:** [Dosya Adı]
+                       - **Kısa Özet:** [Olayın bağlamı]
+                    4. Eğer bilgi yoksa "Arşivde bu bilgiye rastlanmadı" de.
+                    """
+                    
+                    rag_cevap = get_ai_response(prompt, api_key)
+                    
+                    st.markdown("### 🔍 Arama Sonucu:")
+                    st.markdown(f"""
+                    <div style="background-color:#f0f8ff; padding:20px; border-radius:10px; border-left: 5px solid #1e90ff;">
+                        {rag_cevap}
+                    </div>
+                    """, unsafe_allow_html=True)
 
 
 
