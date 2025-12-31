@@ -435,7 +435,7 @@ def main():
     # 2. SATIR: Yönetim, Pro Modüller, Canlı Asistan ve "Etki Analizi" (16 Sekme)
     st.markdown("### 🚀 Yönetim, Hesaplama & Pro Modüller")
     # tab33 (Etki Analizi) buraya eklendi
-    tab10, tab11, tab12, tab13, tab14, tab15, tab16, tab17, tab19, tab20, tab21, tab22, tab23, tab32, tab33 = st.tabs([
+    tab10, tab11, tab12, tab13, tab14, tab15, tab16, tab17, tab19, tab21, tab22, tab23, tab32, tab33 = st.tabs([
         "🙋 Buyur Abi", "⏰ Hatırlatıcı", "🗄️ Arşiv", "🏛️ UYAP Analiz", 
         "🧮 Faiz Hesabı", "⏳ Süre Hesapla", "🕸️ İlişki Ağı", "📝 Sözleşme Analiz", 
         "🕵️‍♂️ KVKK Temizle", "💰 AAÜT Hesapla", "⚔️ Belge Kıyasla", 
@@ -1041,45 +1041,7 @@ def main():
             st.text_area("Sonuç:", st.session_state.kvkk_metin, height=200)
             st.download_button("📥 İndir", st.session_state.kvkk_metin, "Anonim.txt")
 
-    with tab20:
-        st.subheader("💰 AAÜT Hesaplayıcı (2024-2025)")
-        dava_turu = st.selectbox("Dava Türü", ["Asliye Hukuk", "Sulh Hukuk", "İcra", "Ağır Ceza", "Tüketici"])
-        dava_degeri = st.number_input("Dava Değeri (TL)", min_value=0.0)
-        
-        if st.button("Vekalet Ücreti Hesapla"):
-            ucret = 0
-            if dava_turu == "Asliye Hukuk": maktu = 17900
-            elif dava_turu == "Sulh Hukuk": maktu = 10700
-            elif dava_turu == "Ağır Ceza": maktu = 29800
-            else: maktu = 17900
-            
-            # Nispi Hesap (Basitleştirilmiş)
-            kalan = dava_degeri
-            nispi = 0
-            
-            # İlk 400.000 -> %16
-            dilim1 = min(kalan, 400000)
-            nispi += dilim1 * 0.16
-            kalan -= dilim1
-            
-            if kalan > 0:
-                dilim2 = min(kalan, 400000) # Sonraki 400 bin
-                nispi += dilim2 * 0.15
-                kalan -= dilim2
-            
-            if kalan > 0:
-                dilim3 = min(kalan, 800000) # Sonraki 800 bin
-                nispi += dilim3 * 0.14
-                kalan -= dilim3
-            
-            # Kalan miktar için %11 (Basit hesap için burada kesiyoruz)
-            if kalan > 0:
-                nispi += kalan * 0.11
-            
-            toplam_ucret = max(maktu, nispi)
-            
-            st.success(f"Hesaplanan Asgari Ücret: {toplam_ucret:,.2f} TL (KDV Hariç)")
-            st.caption("*Not: Bu hesaplama bilgilendirme amaçlıdır, resmi tarife ile teyit ediniz.*")
+
 
     with tab21:
         st.subheader("⚔️ Belge Kıyaslama (Diff Tool)")
