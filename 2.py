@@ -292,7 +292,7 @@ def get_ai_response(prompt, api_key):
 
 # --- ANA UYGULAMA ---
 def main():
-    st.title("⚖️ Hukuk Asistanı (v7.5 - Arşiv Raporlama)")
+    st.title("⚖️ Hukuk Asistanı (v7.6 - Final)")
     
     try:
         lib_ver = importlib.metadata.version("google-generativeai")
@@ -865,3 +865,20 @@ def main():
                                                         full_text += f"\n--- {f_name} ---\n{pdf_text}"
                                                     elif ext in ['docx', 'doc']:
                                                         full_text += f"\n--- {f_name} ---\n{extract_text_from_docx(file_content)}"
+                                                    elif ext == 'udf':
+                                                        full_text += f"\n--- {f_name} ---\n{parse_udf(file_content)}"
+                                                    elif ext in ['png', 'jpg', 'jpeg', 'tif', 'tiff']:
+                                                        mime = "image/tiff" if ext in ['tif', 'tiff'] else "image/jpeg"
+                                                        file_content.seek(0)
+                                                        ocr_res = perform_ocr_gemini(file_content, mime, api_key)
+                                                        full_text += f"\n--- {f_name} ---\n{ocr_res}"
+                                                except Exception as e:
+                                                    full_text += f"\n--- {f_name} (HATA) ---\n{str(e)}"
+                                            
+                                            st.session_state.arsiv_context = full_text
+                                            st.session_state.aktif_dosya_adi = os.path.basename(sonuc['yol'])
+                                            st.session_state.aktif_dosya_yolu = sonuc['yol']
+                                            st.rerun()
+
+if __name__ == "__main__":
+    main()
