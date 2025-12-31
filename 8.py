@@ -426,7 +426,7 @@ def main():
     
     # 1. SATIR: Temel, Strateji ve Şeytanın Avukatı (15 Sekme)
     st.markdown("### 🛠️ Temel Araçlar & Strateji")
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab26, tab29, tab30, tab31, tab9 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab26, tab29, tab30, tab31, tab9, tab34 = st.tabs([
         "📋 Analiz", "💬 Sohbet", "📕 Mevzuat", "⚖️ İçtihat", 
         "✍️ Dilekçe Yaz", "❓ Bana Sor", "🎙️ Sesli Komut", "👁️ OCR",
         "🌍 Çeviri", "🛡️ Tez Çürüt", "🕵️‍♂️ Sorgu", "😈 Şeytanın Avukatı", "🤿 Dalgıç", "🧠 Semantik Arşiv"
