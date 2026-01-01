@@ -1622,13 +1622,25 @@ def render_mediation_checker(api_key):
 import folium
 from streamlit_folium import st_folium
 import random
+import streamlit as st
 
 def render_forensic_map(api_key):
     st.info("🗺️ **Adli Isı Haritası (Forensic Geolocation):** Olay yerindeki geçmiş vakaları analiz eder. 'Sürücü hatası mı, yoksa yol kusuru mu?' sorusuna İdare Hukuku perspektifiyle yanıt arar.")
 
+    # --- SESSION STATE (HAFIZA) AYARLARI ---
+    # Analiz yapıldı mı bilgisini hafızada tutuyoruz
+    if "map_analyzed" not in st.session_state:
+        st.session_state.map_analyzed = False
+    
+    # AI Sonucunu hafızada tutmak için (Tekrar tekrar API harcamasın)
+    if "ai_map_result" not in st.session_state:
+        st.session_state.ai_map_result = None
+
     # --- 0. MODEL SEÇİCİ ---
     def get_best_model():
         try:
+            # Genai import kontrolü (Global scope'ta yoksa hata vermesin)
+            import google.generativeai as genai
             available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
             for m in available_models:
                 if 'flash' in m: return m
@@ -1648,92 +1660,111 @@ def render_forensic_map(api_key):
         
         st.divider()
         st.markdown("#### 🎯 Hedef Analiz")
-        st.caption("Sistem, son 5 yıldaki haberleri ve şikayetleri tarayarak 'Hizmet Kusuru' arayacaktır.")
         
-        analyze_btn = st.button("📡 Bölgeyi Tara ve Risk Haritası Çıkar", type="primary")
+        # BUTONLAR
+        col_b1, col_b2 = st.columns(2)
+        
+        # Analiz Butonu (Callback ile hafızayı tetikler)
+        def activate_analysis():
+            st.session_state.map_analyzed = True
+            st.session_state.ai_map_result = None # Yeni analiz için eski AI sonucunu sil
+            
+        if col_b1.button("📡 Bölgeyi Tara", type="primary", on_click=activate_analysis):
+            pass # İşlemi aşağıda yapacağız
+            
+        # Sıfırlama Butonu
+        def reset_analysis():
+            st.session_state.map_analyzed = False
+            st.session_state.ai_map_result = None
+            
+        if col_b2.button("🔄 Sıfırla", on_click=reset_analysis):
+            pass
 
     # --- 2. HARİTA VE ANALİZ ---
     with col_map:
-        # Varsayılan Koordinatlar (İstanbul Merkezli Başlangıç)
+        # Varsayılan Koordinatlar
         lat, lon = 41.0082, 28.9784 
         if city == "Ankara": lat, lon = 39.9334, 32.8597
         if city == "İzmir": lat, lon = 38.4192, 27.1287
 
-        # Harita Oluştur (Folium)
-        m = folium.Map(location=[lat, lon], zoom_start=12)
+        # Harita Oluştur (Her seferinde temiz başlar)
+        m = folium.Map(location=[lat, lon], zoom_start=13)
         
-        # Eğer butona basıldıysa
-        if analyze_btn:
-            st.markdown(f"### 🔍 {location_name} - Olay Yeri Analizi")
+        # EĞER ANALİZ BUTONUNA BASILDIYSA (Hafıza True ise)
+        if st.session_state.map_analyzed:
+            st.markdown(f"### 🔍 {location_name} - Risk Analizi")
             
-            # 1. SİMÜLASYON: Isı Haritası (Gerçek veriye erişim olmadığı için görselleştirme)
-            # Olay yerinin etrafına rastgele "Geçmiş Kaza" noktaları atıyoruz.
-            # Gerçek hayatta burası Emniyet API'sinden veya Haber Veritabanından gelir.
-            
-            # Merkez Nokta (Olay Yeri)
+            # --- A. HARİTA GÖRSELLEŞTİRME ---
+            # Merkez Nokta
             folium.Marker(
                 [lat, lon], 
                 popup=f"<b>OLAY YERİ</b><br>{location_name}", 
                 icon=folium.Icon(color="red", icon="info-sign")
             ).add_to(m)
             
-            # Geçmiş Vakalar (Simüle Edilmiş Isı Noktaları)
-            for _ in range(15): # Etrafta 15 eski kaza varmış gibi
-                r_lat = lat + random.uniform(-0.02, 0.02)
-                r_lon = lon + random.uniform(-0.02, 0.02)
+            # Risk Noktaları (Simülasyon)
+            # Not: Her render'da yer değiştirmemesi için seed sabitlenebilir veya statik veri kullanılabilir
+            random.seed(42) 
+            for _ in range(15):
+                r_lat = lat + random.uniform(-0.015, 0.015)
+                r_lon = lon + random.uniform(-0.015, 0.015)
                 folium.CircleMarker(
                     location=[r_lat, r_lon],
-                    radius=5,
-                    color="orange",
+                    radius=6,
+                    color="crimson",
                     fill=True,
-                    fill_color="orange",
-                    popup="Geçmiş Vaka (2021-2023)"
+                    fill_color="crimson",
+                    fill_opacity=0.6,
+                    popup="Geçmiş Vaka (Riskli Bölge)"
                 ).add_to(m)
 
-            # Haritayı Göster
-            st_folium(m, height=300, width=700)
+            # Haritayı Çiz
+            st_folium(m, height=350, width=700)
             
-            # 2. YAPAY ZEKA ANALİZİ (Hizmet Kusuru Tespiti)
+            # --- B. YAPAY ZEKA ANALİZİ ---
             if not api_key:
-                st.error("API Key gerekli.")
+                st.error("Detaylı rapor için API Key gerekli.")
             else:
-                output_box = st.empty()
-                output_box.info("Haber arşivleri ve yerel şikayetler taranıyor...")
+                # Eğer daha önce üretilmediyse üret
+                if st.session_state.ai_map_result is None:
+                    status_box = st.info("Haber arşivleri ve yerel şikayetler taranıyor... Lütfen bekleyin.")
+                    
+                    try:
+                        import google.generativeai as genai
+                        genai.configure(api_key=api_key)
+                        active_model = get_best_model()
+                        model = genai.GenerativeModel(active_model)
+                        
+                        prompt = f"""
+                        GÖREV: Sen uzman bir İdare Hukuku avukatı ve Trafik Bilirkişisisin.
+                        KONUM: {location_name}, {city}
+                        OLAY TÜRÜ: {event_type}
+                        
+                        SENARYO: Müvekkil burada bir kaza yaptı/zarar gördü. Sadece karşı tarafı değil, devleti/belediyeyi de dava etmek istiyoruz.
+                        
+                        İSTENENLER:
+                        1. Bu bölgeyle ilgili geçmişte basına yansıyan benzer kazalar veya "ölüm virajı", "karanlık yol" gibi haberler var mı? (Genel bilgi birikimini kullan).
+                        2. İdarenin "Hizmet Kusuru" (Service Defect) sayılabilecek ihmalleri neler olabilir? (Örn: Sinyalizasyon eksikliği, yetersiz aydınlatma, çukur, rögar kapağı).
+                        3. STRATEJİ: Davayı "Tam Yargı Davası" olarak İdare Mahkemesi'ne taşımak için hangi delilleri toplamalıyım? (MOBESE, Belediye şikayet kayıtları vb.)
+                        4. SONUÇ: "Bu kavşakta son 1 yılda çok kaza olduysa, kusur sürücüde değil yoldadır" tezini savunacak hukuki argümanlar yaz.
+                        """
+                        
+                        response = model.generate_content(prompt)
+                        st.session_state.ai_map_result = response.text
+                        status_box.empty() # Yükleniyor yazısını kaldır
+                        
+                    except Exception as e:
+                        st.error(f"AI Hatası: {e}")
                 
-                try:
-                    genai.configure(api_key=api_key)
-                    active_model = get_best_model()
-                    model = genai.GenerativeModel(active_model)
-                    
-                    prompt = f"""
-                    GÖREV: Sen uzman bir İdare Hukuku avukatı ve Trafik Bilirkişisisin.
-                    KONUM: {location_name}, {city}
-                    OLAY TÜRÜ: {event_type}
-                    
-                    SENARYO: Müvekkil burada bir kaza yaptı/zarar gördü. Sadece karşı tarafı değil, devleti/belediyeyi de dava etmek istiyoruz.
-                    
-                    İSTENENLER:
-                    1. Bu bölgeyle ilgili geçmişte basına yansıyan benzer kazalar veya "ölüm virajı", "karanlık yol" gibi haberler var mı? (Genel bilgi birikimini kullan).
-                    2. İdarenin "Hizmet Kusuru" (Service Defect) sayılabilecek ihmalleri neler olabilir? (Örn: Sinyalizasyon eksikliği, yetersiz aydınlatma, çukur, rögar kapağı).
-                    3. STRATEJİ: Davayı "Tam Yargı Davası" olarak İdare Mahkemesi'ne taşımak için hangi delilleri toplamalıyım? (MOBESE, Belediye şikayet kayıtları vb.)
-                    4. SONUÇ: "Bu kavşakta son 1 yılda çok kaza olduysa, kusur sürücüde değil yoldadır" tezini savunacak hukuki argümanlar yaz.
-                    """
-                    
-                    response = model.generate_content(prompt, stream=True)
-                    
-                    full_text = ""
-                    for chunk in response:
-                        full_text += chunk.text
-                        output_box.markdown(full_text + "▌")
-                    output_box.markdown(full_text)
-                    
-                except Exception as e:
-                    output_box.error(f"Hata: {e}")
+                # Sonucu Göster (Hafızadan)
+                if st.session_state.ai_map_result:
+                    st.markdown(st.session_state.ai_map_result)
         
         else:
             # Analiz öncesi boş harita
-            st_folium(m, height=300, width=700)
-            st.caption("Analiz butonuna bastığınızda bölgedeki risk yoğunluğu haritaya işlenecektir.")
+            st_folium(m, height=350, width=700)
+            st.caption("👈 Analiz butonuna bastığınızda bölgedeki risk yoğunluğu haritaya işlenecektir.")
+
 
 import datetime
 
