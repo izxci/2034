@@ -1993,9 +1993,7 @@ def render_expert_report_auditor(api_key):
                     output_box.error(f"Analiz Hatası: {e}")
 
          
-import pandas as pd
-import io
-from datetime import datetime
+
 
 def render_corporate_memory(api_key):
     st.info("🏛️ **Kurumsal Hafıza V2 (Akıllı Arşiv & OCR):** Belgeleri tarar, verileri ayıklar ve Excel'e işler. Eski Excel dosyanızı yükleyerek veritabanını büyütebilirsiniz.")
