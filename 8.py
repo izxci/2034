@@ -1074,6 +1074,111 @@ def render_owner_mode(api_key):
                         except Exception as e:
                             st.error(f"Cevap üretilemedi: {e}")
 
+def render_property_genealogy(api_key):
+    st.info("🌳 **Mülkiyet Soyağacı (Property Genealogy):** Bir taşınmazın 1920'den bugüne el değiştirme sürecini haritalandırır. AI, zincirdeki kopuklukları (intikali yapılmamış ölüler, kayıp mirasçılar) tespit eder.")
+
+    if 'prop_history' not in st.session_state:
+        # Varsayılan Senaryo: Mardin'de Sorunlu Bir Arazi
+        st.session_state.prop_history = [
+            {"yil": "1924", "kimden": "HAZİNE", "kime": "Hacı Ömer (Kök Muris)", "islem": "Osmanlı Tapu Tescil", "durum": "Pasif"},
+            {"yil": "1955", "kimden": "Hacı Ömer", "kime": "Ahmet (Oğlu)", "islem": "Miras (Veraset İlamı Var)", "durum": "Pasif"},
+            {"yil": "1955", "kimden": "Hacı Ömer", "kime": "Mehmet (Oğlu)", "islem": "Miras (Veraset İlamı YOK - İntikal Yapılmadı)", "durum": "Kritik"},
+            {"yil": "1980", "kimden": "Ahmet (Oğlu)", "kime": "Veli (3. Şahıs)", "islem": "Satış", "durum": "Aktif"},
+            {"yil": "1995", "kimden": "Mehmet (Oğlu)", "kime": "?", "islem": "Ölüm (Mirasçılar Belirsiz)", "durum": "Kayıp Halka"},
+        ]
+
+    col_graph, col_analysis = st.columns([2, 1])
+
+    # --- SOL KOLON: GÖRSEL SOYAĞACI ---
+    with col_graph:
+        st.markdown("### 🗺️ Tapu İntikal Haritası")
+        
+        # Graphviz (DOT Dili) ile Ağaç Oluşturma
+        graph_code = "digraph {"
+        graph_code += "\n  rankdir=LR;" # Soldan sağa akış
+        graph_code += "\n  node [shape=box, style=filled, fontname=\"Arial\"];"
+        
+        for item in st.session_state.prop_history:
+            # Renk Kodlaması
+            color = "lightgrey" # Geçmiş
+            if item["durum"] == "Aktif": color = "lightgreen" # Güncel Malik
+            if item["durum"] == "Kritik": color = "#ffcccc" # Sorunlu (Kırmızımsı)
+            if item["durum"] == "Kayıp Halka": color = "orange" # Bilinmiyor
+            
+            # Düğümleri Bağla
+            # Örn: "Hacı Ömer" -> "Ahmet" [label="1955 Miras"]
+            safe_kimden = item['kimden'].replace(" ", "_").replace("(", "").replace(")", "").replace(".", "")
+            safe_kime = item['kime'].replace(" ", "_").replace("(", "").replace(")", "").replace(".", "")
+            
+            graph_code += f'\n  "{item["kimden"]}" -> "{item["kime"]}" [label="{item["yil"]}\\n{item["islem"]}", fontsize=10];'
+            graph_code += f'\n  "{item["kime"]}" [fillcolor="{color}", label="{item["kime"]}\\n({item["durum"]})"];'
+            
+        graph_code += "\n}"
+        
+        st.graphviz_chart(graph_code)
+        
+        with st.expander("📝 Kayıt Ekle / Düzenle"):
+            c1, c2, c3, c4 = st.columns(4)
+            new_yil = c1.text_input("Yıl", "2024")
+            new_kimden = c2.text_input("Kimden", "Veli")
+            new_kime = c3.text_input("Kime", "Ali")
+            new_islem = c4.text_input("İşlem", "Satış")
+            
+            if st.button("Zincire Ekle"):
+                st.session_state.prop_history.append({
+                    "yil": new_yil, "kimden": new_kimden, "kime": new_kime, 
+                    "islem": new_islem, "durum": "Aktif"
+                })
+                st.rerun()
+            
+            if st.button("Sıfırla"):
+                st.session_state.prop_history = []
+                st.rerun()
+
+    # --- SAĞ KOLON: AI RİSK ANALİZİ ---
+    with col_analysis:
+        st.markdown("### 🕵️ Yapay Zeka Dedektifi")
+        st.write("Mevcut tapu zincirindeki hukuki boşlukları tarar.")
+        
+        if st.button("🔍 Zinciri Analiz Et", type="primary"):
+            if not api_key:
+                st.error("API Anahtarı gerekli.")
+            else:
+                with st.spinner("Tapu kayıtları taranıyor..."):
+                    # Veriyi metne dök
+                    chain_str = "\n".join([f"{x['yil']}: {x['kimden']} -> {x['kime']} ({x['islem']} - Durum: {x['durum']})" for x in st.session_state.prop_history])
+                    
+                    prompt = f"""
+                    GÖREV: Sen uzman bir Tapu ve Kadastro avukatısın.
+                    Aşağıdaki mülkiyet zincirini analiz et ve "Mülkiyet Kopukluklarını" bul.
+                    
+                    TAPU ZİNCİRİ:
+                    {chain_str}
+                    
+                    ANALİZ İSTEĞİ:
+                    1. Hangi aşamada intikal yapılmamış?
+                    2. "Ölü" görünen ama tapuda hala adı geçen kimse var mı? (Kayıp Mirasçı Riski)
+                    3. Bu taşınmazı satın alacak birine ne tavsiye edersin?
+                    4. Hukuki risk puanı (10 üzerinden).
+                    """
+                    
+                    # Otomatik Model Seçici
+                    try:
+                        active_model = "models/gemini-pro"
+                        for m in genai.list_models():
+                            if 'generateContent' in m.supported_generation_methods and 'gemini' in m.name:
+                                active_model = m.name
+                                break
+                        
+                        model = genai.GenerativeModel(active_model)
+                        response = model.generate_content(prompt)
+                        
+                        st.success("Analiz Tamamlandı!")
+                        st.markdown(response.text)
+                        
+                    except Exception as e:
+                        st.error(f"Hata: {e}")
+
 
 
 
@@ -1179,7 +1284,7 @@ def main():
 
     # 3. SATIR: Simülasyon ve İleri Düzey Risk (YENİ EKLENDİ)
     st.markdown("### 🔮 Simülasyon & Risk Analizi")
-    tab_checkup, tab_timemachine, tab_aym, tab_deepfake, tab_osyn, tab_sxx, tab_sah = st.tabs(["🏥 Kurumsal Check-up", "⏳ Zaman Makinesi", "⚖️ AYM & AİHM Testi", "🕵️ Deepfake Kontrol", "🌐 OSINT (İstihbarat)", "🔔 Emsal Alarm", "👑 Sahip Modu"])
+    tab_checkup, tab_timemachine, tab_aym, tab_deepfake, tab_osyn, tab_sxx, tab_sah, tab_soy = st.tabs(["🏥 Kurumsal Check-up", "⏳ Zaman Makinesi", "⚖️ AYM & AİHM Testi", "🕵️ Deepfake Kontrol", "🌐 OSINT (İstihbarat)", "🔔 Emsal Alarm", "👑 Sahip Modu", "🌳 Soyağacı"])
 
     # --- SEKMELERİN İÇERİKLERİ ---
     
@@ -1205,6 +1310,7 @@ def main():
 
     with tab_sxx: render_precedent_alert_module(api_key)
     with tab_sah: render_owner_mode(api_key)
+        with tab_soy: render_property_genealogy(api_key)
 
     # --- TAB İÇERİKLERİ ---
 
