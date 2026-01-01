@@ -615,56 +615,113 @@ def get_image_metadata(image):
     return meta_dict
 
 def render_deepfake_module(api_key):
-    # Bu yazı çıkıyorsa fonksiyon çalışıyor demektir
-    st.write("--- Modül Başlatıldı ---") 
-    
-    st.info("Şüpheli fotoğrafı yükleyin. Yapay zeka 'Montaj/Deepfake' izlerini arasın.")
-    
-    col_upload, col_report = st.columns([1, 2])
-    
-    with col_upload:
-        st.markdown("#### 🕵️‍♂️ Delil Yükle")
-        # Şimdilik sadece Resim özelliğini açıyoruz (Hata riskini azaltmak için)
-        uploaded_file = st.file_uploader("Resim Seç (JPG, PNG)", type=["jpg", "jpeg", "png"])
-        analyze_btn = st.button("🔍 Analizi Başlat", type="primary")
-
-    with col_report:
-        if analyze_btn and uploaded_file:
-            if not api_key:
-                st.error("⚠️ API Anahtarı eksik.")
+    # --- HATA YAKALAYICI BLOK BAŞLANGICI ---
+    try:
+        st.info("Şüpheli fotoğraf veya ses kaydını yükleyin. Yapay zeka, metadata (üst veri) analizi ve içerik taraması yaparak 'Montaj/Deepfake' izlerini arasın.")
+        
+        col_upload, col_report = st.columns([1, 2])
+        
+        with col_upload:
+            st.markdown("#### 🕵️‍♂️ Delil Yükle")
+            file_type = st.radio("Delil Türü", ["Fotoğraf / Belge Görüntüsü", "Ses Kaydı (Kısa)"])
+            
+            if file_type == "Fotoğraf / Belge Görüntüsü":
+                uploaded_file = st.file_uploader("Resim Seç (JPG, PNG)", type=["jpg", "jpeg", "png"])
             else:
-                st.write("Analiz yapılıyor, lütfen bekleyin...") # Debug mesajı
+                uploaded_file = st.file_uploader("Ses Dosyası Seç (MP3, WAV)", type=["mp3", "wav"])
                 
-                try:
-                    image = Image.open(uploaded_file)
-                    st.image(image, caption="Yüklenen Görsel", width=250)
-                    
-                    # Metadata
-                    meta_info = get_image_metadata(image)
-                    meta_str = str(meta_info) if meta_info else "Metadata Yok"
-                    
-                    # AI Analizi
-                    genai.configure(api_key=api_key)
-                    model = genai.GenerativeModel('gemini-1.5-flash')
-                    
-                    prompt = f"""
-                    GÖREV: Adli Bilişim Uzmanı olarak bu resmi analiz et.
-                    METADATA: {meta_str}
-                    SORU: Bu resimde montaj, deepfake veya photoshop izi var mı?
-                    ÇIKTI FORMATI:
-                    SKOR: [0-100 arası güven puanı]
-                    DETAY: [Gözlemlerin]
-                    """
-                    
-                    response = model.generate_content([prompt, image])
-                    text = response.text
-                    
-                    # Sonuç Gösterimi
-                    st.success("Analiz Tamamlandı!")
-                    st.write(text)
-                    
-                except Exception as e:
-                    st.error(f"Hata oluştu: {str(e)}")
+            analyze_btn = st.button("🔍 Adli Bilişim Analizi Yap", type="primary", use_container_width=True)
+
+        with col_report:
+            if analyze_btn and uploaded_file:
+                if not api_key:
+                    st.error("⚠️ API Anahtarı eksik.")
+                else:
+                    with st.spinner("Dosya bit-bit inceleniyor, metadata taranıyor ve AI analizi yapılıyor..."):
+                        
+                        genai.configure(api_key=api_key)
+                        # Model seçimi (Hata verirse Pro'ya düş)
+                        try:
+                            model = genai.GenerativeModel('gemini-1.5-flash')
+                        except:
+                            model = genai.GenerativeModel('gemini-pro-vision')
+                        
+                        report_text = ""
+                        fake_score = 0
+                        metadata_info = {}
+
+                        # --- FOTOĞRAF ANALİZİ ---
+                        if file_type == "Fotoğraf / Belge Görüntüsü":
+                            image = Image.open(uploaded_file)
+                            st.image(image, caption="İncelenen Delil", width=300)
+                            
+                            # Metadata Kontrolü (Güvenli)
+                            try:
+                                metadata_info = get_image_metadata(image)
+                                meta_str = str(metadata_info) if metadata_info else "Metadata bulunamadı."
+                            except Exception as e:
+                                meta_str = f"Metadata okunamadı: {e}"
+                            
+                            prompt = f"""
+                            GÖREV: Sen uzman bir Adli Bilişim (Forensics) uzmanısın.
+                            METADATA: {meta_str}
+                            GÖREVLER:
+                            1. Görselde Deepfake/Montaj izi var mı?
+                            2. Metadata tutarlı mı?
+                            3. Güvenilirlik puanı (0-100).
+                            ÇIKTI: GÜVEN_SKORU: [Sayı] ...
+                            """
+                            response = model.generate_content([prompt, image])
+                            report_text = response.text
+
+                        # --- SES ANALİZİ ---
+                        else: 
+                            # Ses analizi için güvenli blok
+                            try:
+                                st.audio(uploaded_file)
+                                # Geçici dosya oluşturma
+                                import tempfile
+                                with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
+                                    tmp_file.write(uploaded_file.getvalue())
+                                    tmp_path = tmp_file.name
+                                
+                                # Speech Recognition
+                                r = sr.Recognizer()
+                                with sr.AudioFile(tmp_path) as source:
+                                    audio_data = r.record(source)
+                                    text_output = r.recognize_google(audio_data, language="tr-TR")
+                                    
+                                    prompt = f"""Ses Transkripti: "{text_output}". Bu konuşma doğal mı, kurgu mu? Puanla (0-100). ÇIKTI: GÜVEN_SKORU: [Sayı] ..."""
+                                    model_text = genai.GenerativeModel('gemini-pro')
+                                    response = model_text.generate_content(prompt)
+                                    report_text = response.text
+                            except ImportError:
+                                st.error("Ses analizi için 'SpeechRecognition' kütüphanesi yüklü değil.")
+                                return
+                            except Exception as e:
+                                st.error(f"Ses işleme hatası: {str(e)}")
+                                return
+
+                        # --- SONUÇLARI GÖSTER ---
+                        match = re.search(r"GÜVEN_SKORU:\s*(\d+)", report_text)
+                        if match: fake_score = int(match.group(1))
+                        
+                        st.divider()
+                        st.metric("Delil Güvenilirlik Skoru", f"{fake_score} / 100")
+                        st.progress(fake_score / 100)
+                        
+                        if fake_score < 50:
+                            st.error("🚨 SAHTECİLİK ŞÜPHESİ YÜKSEK")
+                        else:
+                            st.success("✅ DELİL GÜVENİLİR GÖRÜNÜYOR")
+                            
+                        st.write(report_text.replace(f"GÜVEN_SKORU: {fake_score}", ""))
+
+    except Exception as e:
+        # EĞER BEYAZ EKRAN ÇIKARSA BURASI DEVREYE GİRER VE HATAYI YAZAR
+        st.error(f"🚨 Modül Yükleme Hatası: {str(e)}")
+        st.warning("Lütfen 'PIL', 'SpeechRecognition' kütüphanelerinin yüklü olduğundan ve 'TAGS' importunun yapıldığından emin olun.")
+
 
 
 
