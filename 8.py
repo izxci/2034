@@ -1,4 +1,6 @@
+import pandas as pd  # <--- BU SATIRI EN BAŞA EKLEYİN
 import streamlit as st
+import time
 import zipfile
 import xml.etree.ElementTree as ET
 import re
