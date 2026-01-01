@@ -348,31 +348,57 @@ def get_ai_response(prompt, api_key):
 # ==========================================
 
 def get_gemini_text_response(prompt, api_key):
-    """Metin tabanlı sorgular için çoklu model deneyen güvenli fonksiyon."""
+    """Mevcut modelleri tarayıp çalışan ilk modeli kullanan fonksiyon."""
     if not api_key: return "Lütfen API Anahtarınızı giriniz."
     
     try:
         genai.configure(api_key=api_key)
         
-        # Sırasıyla denenecek modeller (Hızlı -> Güçlü -> Eski Standart)
-        # Eğer flash çalışmazsa otomatik olarak pro'ya geçer.
-        model_list = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
+        # 1. ADIM: Kullanıcının erişebildiği modelleri listele
+        available_models = []
+        try:
+            for m in genai.list_models():
+                if 'generateContent' in m.supported_generation_methods:
+                    available_models.append(m.name)
+        except Exception as e:
+            # Listeleme hatası olursa manuel listeye dön
+            available_models = ["models/gemini-1.5-flash", "models/gemini-pro", "gemini-1.5-flash"]
+
+        # 2. ADIM: En iyi modeli seç (Hız > Kalite sıralaması)
+        selected_model = None
         
-        last_error = ""
+        # Öncelik 1: Flash modeller (Hızlı)
+        for m in available_models:
+            if 'flash' in m.lower():
+                selected_model = m
+                break
         
-        for model_name in model_list:
-            try:
-                model = genai.GenerativeModel(model_name)
-                response = model.generate_content(prompt)
-                return response.text
-            except Exception as e:
-                last_error = str(e)
-                continue # Hata verirse bir sonraki modeli dene
+        # Öncelik 2: Pro modeller (Eğer flash yoksa)
+        if not selected_model:
+            for m in available_models:
+                if 'pro' in m.lower() and 'vision' not in m.lower():
+                    selected_model = m
+                    break
         
-        return f"AI Hatası: Hiçbir modele erişilemedi. ({last_error})"
-        
+        # Öncelik 3: Listede ne varsa ilki
+        if not selected_model and available_models:
+            selected_model = available_models[0]
+            
+        # Hiçbiri yoksa son çare
+        if not selected_model:
+            selected_model = "models/gemini-1.5-flash"
+
+        # 3. ADIM: Seçilen modelle üretimi yap
+        try:
+            model = genai.GenerativeModel(selected_model)
+            response = model.generate_content(prompt)
+            return response.text
+        except Exception as e:
+            return f"Model Hatası ({selected_model}): {str(e)}"
+            
     except Exception as e:
-        return f"Sistem Hatası: {str(e)}"
+        return f"Genel Sistem Hatası: {str(e)}"
+
 
 
 def render_checkup_module(api_key):
