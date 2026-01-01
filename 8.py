@@ -2525,7 +2525,6 @@ def render_forensic_map_module(api_key):
                 st.info(yorum)
 
 import math
-from datetime import datetime
 
 def calculate_sun_position(latitude, longitude, date_time):
     """
