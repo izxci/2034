@@ -348,15 +348,32 @@ def get_ai_response(prompt, api_key):
 # ==========================================
 
 def get_gemini_text_response(prompt, api_key):
-    """Metin tabanlı sorgular için güvenli Gemini çağrısı."""
+    """Metin tabanlı sorgular için çoklu model deneyen güvenli fonksiyon."""
     if not api_key: return "Lütfen API Anahtarınızı giriniz."
+    
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        response = model.generate_content(prompt)
-        return response.text
+        
+        # Sırasıyla denenecek modeller (Hızlı -> Güçlü -> Eski Standart)
+        # Eğer flash çalışmazsa otomatik olarak pro'ya geçer.
+        model_list = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
+        
+        last_error = ""
+        
+        for model_name in model_list:
+            try:
+                model = genai.GenerativeModel(model_name)
+                response = model.generate_content(prompt)
+                return response.text
+            except Exception as e:
+                last_error = str(e)
+                continue # Hata verirse bir sonraki modeli dene
+        
+        return f"AI Hatası: Hiçbir modele erişilemedi. ({last_error})"
+        
     except Exception as e:
-        return f"AI Hatası: {str(e)}"
+        return f"Sistem Hatası: {str(e)}"
+
 
 def render_checkup_module(api_key):
     st.info("Şirket sözleşmelerini veya İK belgelerini yükleyin. Yapay zeka, güncel Yargıtay kararlarına göre 'Görünmez Riskleri' tespit edip puanlasın.")
