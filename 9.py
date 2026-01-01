@@ -2323,17 +2323,8 @@ def main():
     st.divider()
 
     # --- 1. GRUP: TEMEL ARAÇLAR ---
-    if secilen_modul == "📋 Analiz":
-        col1, col2 = st.columns(2)
-        with col1:
-            st.write(f"**Mahkeme:** {input_mahkeme or auto_data['mahkeme']}")
-            st.write(f"**Dosya No:** {input_dosya_no or auto_data['esas']}")
-        with col2:
-            st.write(f"**Davacı:** {input_davaci or '-'}")
-            st.write(f"**Davalı:** {input_davali or '-'}")
-        st.text_area("Metin Önizleme", st.session_state.doc_text, height=300)
 
-    elif secilen_modul == "💬 Sohbet":
+    if secilen_modul == "💬 Sohbet":
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]): st.markdown(msg["content"])
         if prompt := st.chat_input("Bu dosya hakkında soru sor..."):
