@@ -505,6 +505,63 @@ def render_time_machine(api_key):
                 st.info(response)
                 st.image("https://img.freepik.com/free-vector/sepia-vintage-paper-texture_53876-88607.jpg?w=1380", caption="Arşiv Kaydı", width=600)
 
+# --- 3. MODÜL: AYM & AİHM UYGUNLUK TESTİ ---
+def render_aym_aihm_module(api_key):
+    st.info("Dilekçenizi veya yerel mahkeme kararını yapıştırın. Yapay zeka, metni Avrupa İnsan Hakları Mahkemesi (AİHM) ve Anayasa Mahkemesi (AYM) kriterlerine göre tarasın.")
+    
+    col_input, col_result = st.columns([1, 1])
+    
+    with col_input:
+        st.markdown("#### 📝 Metin Girişi")
+        user_text = st.text_area("Dilekçe veya Karar Metnini Buraya Yapıştırın:", height=300, placeholder="Örn: Mahkeme, müvekkilin tapulu arazisine kamulaştırmasız el atmıştır...")
+        
+        analyze_btn = st.button("⚖️ İhlal Testini Başlat", type="primary", use_container_width=True)
+
+    with col_result:
+        if analyze_btn and user_text:
+            if not api_key:
+                st.error("⚠️ Lütfen API Anahtarını giriniz.")
+            elif len(user_text) < 50:
+                st.warning("Lütfen daha uzun bir metin giriniz.")
+            else:
+                with st.spinner("Metin, AİHM ve AYM içtihatlarıyla çapraz sorgulanıyor..."):
+                    
+                    prompt = f"""
+                    GÖREV: Sen AİHM ve AYM kararları konusunda uzmanlaşmış kıdemli bir hukukçusun.
+                    METİN: "{user_text[:4000]}"
+                    
+                    ANALİZ ADIMLARI:
+                    1. Bu metindeki olayda, Avrupa İnsan Hakları Sözleşmesi (AİHS) veya Anayasa ile korunan hangi temel haklar risk altında? (Örn: Mülkiyet Hakkı, Adil Yargılanma Hakkı).
+                    2. Bu metin bir mahkeme kararıysa Üst Mahkemede BOZULMA İHTİMALİ yüzde kaçtır? Bir dilekçeyse KABUL EDİLME GÜCÜ yüzde kaçtır? (0-100 arası bir puan ver).
+                    3. Konuyla ilgili emsal bir AİHM veya AYM kararı adı ver (Örn: AİHM, Sporrong ve Lönnroth v. İsveç).
+                    
+                    ÇIKTI FORMATI:
+                    ORAN: [Sayı]
+                    ANALİZ: [Detaylı Hukuki Görüş]
+                    EMSAL: [Karar İsimleri]
+                    """
+                    
+                    ai_response = get_gemini_text_response(prompt, api_key)
+                    
+                    # Oranı çekme
+                    ihlal_orani = 50
+                    match = re.search(r"ORAN:\s*(\d+)", ai_response)
+                    if match: ihlal_orani = int(match.group(1))
+                    
+                    # --- GÖRSELLEŞTİRME ---
+                    st.markdown(f"### 🛡️ Hak İhlali / Bozulma Riski: %{ihlal_orani}")
+                    st.progress(ihlal_orani / 100)
+                    
+                    if ihlal_orani > 70:
+                        st.error("🚨 YÜKSEK İHLAL RİSKİ: Bu karar muhtemelen AİHM veya AYM'den döner!")
+                    elif ihlal_orani > 40:
+                        st.warning("⚠️ ORTA RİSK: Temellendirme güçlendirilmeli.")
+                    else:
+                        st.success("✅ DÜŞÜK RİSK: Metin standartlara uygun görünüyor.")
+                        
+                    st.markdown("---")
+                    st.markdown(ai_response.replace(f"ORAN: {ihlal_orani}", ""))
+
 
 # --- ANA UYGULAMA ---
 def main():
@@ -608,7 +665,7 @@ def main():
 
     # 3. SATIR: Simülasyon ve İleri Düzey Risk (YENİ EKLENDİ)
     st.markdown("### 🔮 Simülasyon & Risk Analizi")
-    tab_checkup, tab_timemachine = st.tabs(["🏥 Kurumsal Check-up", "⏳ Zaman Makinesi"])
+    tab_checkup, tab_timemachine = st.tabs(["🏥 Kurumsal Check-up", "⏳ Zaman Makinesi", "⚖️ AYM & AİHM Testi"])
 
     # --- SEKMELERİN İÇERİKLERİ ---
     
@@ -623,7 +680,8 @@ def main():
 
     # (Buradan sonra eski kodunuzdaki 'with tab1:', 'with tab2:' blokları gelmeli...)
 
-
+    with tab_aym:  # <--- YENİ EKLENEN KISIM
+        render_aym_aihm_module(api_key)
 
     # --- TAB İÇERİKLERİ ---
 
