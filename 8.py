@@ -2437,13 +2437,10 @@ def render_forensic_map_module(api_key):
         st.subheader("📍 Olay Yeri Krokisi (Simülasyon)")
         
         # --- FİZİK MOTORU ---
-        # Formül: V = sqrt(2 * mu * g * d) * 3.6 (m/s -> km/s dönüşümü)
-        # V: Hız, mu: Sürtünme, g: Yerçekimi (9.81), d: Fren mesafesi
-        
+        # Formül: V = sqrt(2 * mu * g * d) * 3.6
         tahmini_hiz = (2 * mu * 9.81 * fren_izi)**0.5 * 3.6
         
-        # Reaksiyon Mesafesi (Sürücü frene basana kadar geçen yol)
-        # Ortalama reaksiyon süresi: 1 saniye
+        # Reaksiyon Mesafesi (1 saniye)
         reaksiyon_mesafesi = (arac_hizi / 3.6) * 1.0 
         durma_mesafesi = reaksiyon_mesafesi + fren_izi
         
@@ -2454,11 +2451,23 @@ def render_forensic_map_module(api_key):
         fig.add_shape(type="rect", x0=0, y0=0, x1=durma_mesafesi + 20, y1=10, fillcolor="gray", opacity=0.3, line_width=0)
         fig.add_shape(type="line", x0=0, y0=5, x1=durma_mesafesi + 20, y1=5, line=dict(color="white", width=3, dash="dash"))
         
-        # Araç (Başlangıç)
-        fig.add_trace(go.Scatter(x=[0], y=[2.5], mode='markers+text', marker=dict(size=20, symbol="car", color="blue"), text=["Fren Başlangıcı"], textposition="top center"))
+        # 1. Araç (Başlangıç) - DÜZELTME: symbol="car" yerine "square" yapıldı
+        fig.add_trace(go.Scatter(
+            x=[0], y=[2.5], 
+            mode='markers+text', 
+            marker=dict(size=25, symbol="square", color="blue"), # <-- DÜZELTİLEN KISIM
+            text=["🚙 Fren Başlangıcı"], # Emojiyi metin içine ekledik
+            textposition="top center"
+        ))
         
-        # Araç (Bitiş)
-        fig.add_trace(go.Scatter(x=[fren_izi], y=[2.5], mode='markers+text', marker=dict(size=20, symbol="x", color="red"), text=["Çarpma/Durma"], textposition="top center"))
+        # 2. Araç (Bitiş)
+        fig.add_trace(go.Scatter(
+            x=[fren_izi], y=[2.5], 
+            mode='markers+text', 
+            marker=dict(size=25, symbol="x", color="red"), 
+            text=["💥 Çarpma/Durma"], 
+            textposition="top center"
+        ))
         
         # Fren İzi Çizgisi
         fig.add_trace(go.Scatter(x=[0, fren_izi], y=[2.5, 2.5], mode='lines', line=dict(color='black', width=4), name='Fren İzi'))
@@ -2514,6 +2523,7 @@ def render_forensic_map_module(api_key):
                 """
                 yorum = get_ai_response(prompt, api_key)
                 st.info(yorum)
+
 
 
 # --- ANA UYGULAMA ---
