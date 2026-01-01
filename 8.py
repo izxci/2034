@@ -2484,7 +2484,8 @@ def render_forensic_map_module(api_key):
 
 import math
 
-def calculate_sun_position(latitude, longitude, date_time):
+def calculate_sun_position(latitude, longitude):
+	import datetime as dtfx
     """
     Basitleştirilmiş NOAA Algoritması ile Güneş Yüksekliğini (Elevation) hesaplar.
     Dış kütüphane gerektirmez.
@@ -2494,7 +2495,7 @@ def calculate_sun_position(latitude, longitude, date_time):
     deg = 180.0 / math.pi
 
     # Yılın kaçıncı günü
-    day_of_year = date_time.timetuple().tm_yday
+    day_of_year = dtfx.timetuple().tm_yday
     
     # 1. Deklinasyon Açısı (Güneşin ekvatorla açısı)
     # Yaklaşık formül: 23.45 * sin(360/365 * (d - 81))
@@ -2509,7 +2510,7 @@ def calculate_sun_position(latitude, longitude, date_time):
     # Türkiye GMT+3 (45. meridyen)
     lstm = 15 * 3 
     time_correction = 4 * (longitude - lstm) + eot
-    local_time = date_time.hour + date_time.minute / 60.0
+    local_time = dtfx.hour + dtfx.minute / 60.0
     solar_time = local_time + time_correction / 60.0
     
     # 4. Saat Açısı (Hour Angle - HRA)
