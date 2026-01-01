@@ -1525,6 +1525,91 @@ def render_conflict_scanner(api_key):
                     except Exception as e:
                         output_box.error(f"Hata: {e}")
 
+def render_mediation_checker(api_key):
+    st.info("🤝 **Arabuluculuk Kontrolcüsü:** Dava türünü girin, sistem bunun 'Dava Şartı (Zorunlu)' olup olmadığını, ilgili kanun maddesini ve başvuru süresini analiz etsin.")
+
+    # --- 0. MODEL SEÇİCİ ---
+    def get_best_model():
+        try:
+            available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+            for m in available_models:
+                if 'flash' in m: return m
+            return available_models[0] if available_models else "models/gemini-pro"
+        except:
+            return "models/gemini-pro"
+
+    col1, col2 = st.columns([1, 1])
+
+    with col1:
+        st.markdown("### ⚖️ Dava Konusu Nedir?")
+        
+        # Hızlı Seçim Butonları
+        st.write("Sık Kullanılanlar:")
+        col_btn1, col_btn2, col_btn3 = st.columns(3)
+        
+        case_input = st.text_input("Veya detaylı yazın (Örn: Mobbing nedeniyle tazminat)", "")
+        
+        if col_btn1.button("Kıdem/İhbar"): case_input = "İşçilik Alacakları (Kıdem, İhbar, Fazla Mesai)"
+        if col_btn2.button("Kira/Tahliye"): case_input = "Kira Tespiti ve Tahliye (Konut/Çatılı İşyeri)"
+        if col_btn3.button("Ticari Alacak"): case_input = "İki Tacir Arasındaki Fatura Alacağı"
+
+    with col2:
+        st.markdown("### 🔍 Analiz Sonucu")
+        
+        if st.button("Arabuluculuk Şartını Kontrol Et", type="primary"):
+            if not case_input:
+                st.warning("Lütfen bir dava türü girin.")
+            elif not api_key:
+                st.error("API Key gerekli.")
+            else:
+                status_box = st.empty()
+                status_box.info("Mevzuat taranıyor (7036, 6102, 6325 Sayılı Kanunlar)...")
+                
+                try:
+                    genai.configure(api_key=api_key)
+                    active_model = get_best_model()
+                    model = genai.GenerativeModel(active_model)
+                    
+                    prompt = f"""
+                    GÖREV: Sen uzman bir Türk Hukuku avukatısın.
+                    SORGU: "{case_input}" konulu bir dava açmak istiyorum.
+                    
+                    ANALİZ ET:
+                    1. Bu dava için Arabuluculuk ZORUNLU MU (Dava Şartı mı) yoksa İHTİYARİ Mİ?
+                    2. Hangi Kanun maddesine dayanıyor? (Örn: TTK 5/A, İŞK 3, 7445 SK vb.)
+                    3. Eğer zorunluysa ve gitmezsem ne olur? (Usulden Ret uyarısı)
+                    4. Başvuru nereye yapılır? (Adliye/Büro)
+                    
+                    ÇIKTI FORMATI:
+                    Lütfen cevabı şu formatta ver (Markdown kullanarak):
+                    
+                    ### 🚦 DURUM: [ZORUNLU / İHTİYARİ / İSTİSNA]
+                    
+                    **📜 Yasal Dayanak:** ...
+                    **⚠️ Risk Uyarısı:** ...
+                    **📍 Başvuru Yeri:** ...
+                    **💡 Kısa Özet:** ...
+                    """
+                    
+                    response = model.generate_content(prompt, stream=True)
+                    
+                    full_text = ""
+                    for chunk in response:
+                        full_text += chunk.text
+                        status_box.markdown(full_text + "▌")
+                    status_box.markdown(full_text)
+                    
+                    # Görsel Uyarılar (Basit Regex Kontrolü)
+                    if "ZORUNLU" in full_text:
+                        st.error("🚨 DİKKAT: Arabulucuya gitmeden dava açarsanız, davanız USULDEN REDDEDİLİR!")
+                    elif "İHTİYARİ" in full_text:
+                        st.success("✅ Zorunlu değil, doğrudan dava açabilirsiniz. Ancak yine de arabuluculuk denenebilir.")
+                        
+                except Exception as e:
+                    status_box.error(f"Hata: {e}")
+
+    st.divider()
+    st.caption("ℹ️ Not: 01.09.2023 tarihinden itibaren Kira, Kat Mülkiyeti, Komşuluk Hukuku ve Ortaklığın Giderilmesi davaları da zorunlu arabuluculuk kapsamına alınmıştır.")
 
 
 # --- ANA UYGULAMA ---
@@ -1629,7 +1714,7 @@ def main():
 
     # 3. SATIR: Simülasyon ve İleri Düzey Risk (YENİ EKLENDİ)
     st.markdown("### 🔮 Simülasyon & Risk Analizi")
-    tab_checkup, tab_timemachine, tab_aym, tab_deepfake, tab_osyn, tab_sxx, tab_sah, tab_soy, tab_isx, tab_golx = st.tabs(["🏥 Kurumsal Check-up", "⏳ Zaman Makinesi", "⚖️ AYM & AİHM Testi", "🕵️ Deepfake Kontrol", "🌐 OSINT (İstihbarat)", "🔔 Emsal Alarm", "👑 Sahip Modu", "🌳 Soyağacı", "🔥 Isı Haritası", "🕸️ Gizli Bağlantı"])
+    tab_checkup, tab_timemachine, tab_aym, tab_deepfake, tab_osyn, tab_sxx, tab_sah, tab_soy, tab_isx, tab_golx, tab_arx = st.tabs(["🏥 Kurumsal Check-up", "⏳ Zaman Makinesi", "⚖️ AYM & AİHM Testi", "🕵️ Deepfake Kontrol", "🌐 OSINT (İstihbarat)", "🔔 Emsal Alarm", "👑 Sahip Modu", "🌳 Soyağacı", "🔥 Isı Haritası", "🕸️ Gizli Bağlantı", "🤝 Arabuluculuk"])
 
     # --- SEKMELERİN İÇERİKLERİ ---
     
@@ -1658,6 +1743,7 @@ def main():
     with tab_soy: render_property_genealogy(api_key)
     with tab_isx: render_limitations_heatmap(api_key)
     with tab_golx: render_conflict_scanner(api_key)
+    with tab_golx: render_mediation_checker(api_key)
     # --- TAB İÇERİKLERİ ---
 
     with tab1:
