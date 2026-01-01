@@ -1075,9 +1075,10 @@ def render_owner_mode(api_key):
                             st.error(f"Cevap üretilemedi: {e}")
 
 import json
+import time
 
 def render_property_genealogy(api_key):
-    st.info("🌳 **Mülkiyet Soyağacı:** Tapu ve kadastro belgelerinizi yükleyin, AI zinciri kursun ve riskleri saniyeler içinde analiz etsin.")
+    st.info("🌳 **Mülkiyet Soyağacı:** Tapu ve kadastro belgelerinizi yükleyin, AI zinciri kursun.")
 
     # --- 1. DOSYA OKUMA ---
     def get_genealogy_file_text(file_obj, api_key_for_ocr):
@@ -1122,27 +1123,31 @@ def render_property_genealogy(api_key):
             if not uploaded_files or not api_key:
                 st.warning("Dosya ve API Key gerekli.")
             else:
-                with st.spinner("Zincir kuruluyor..."):
-                    genai.configure(api_key=api_key)
-                    full_text = ""
-                    for f in uploaded_files:
-                        full_text += f"\nDOC: {f.name}\n" + get_genealogy_file_text(f, api_key)
-                    
-                    try:
-                        # HIZLI MODEL KULLANIYORUZ (FLASH)
-                        model = genai.GenerativeModel('gemini-1.5-flash')
-                        prompt = f"""
-                        GÖREV: Metinlerdeki mülkiyet devirlerini JSON listesi yap.
-                        METİN: {full_text[:40000]}
-                        FORMAT: [{{"yil": "...", "kimden": "...", "kime": "...", "islem": "...", "durum": "Aktif/Pasif/Kritik"}}]
-                        SADECE JSON VER.
-                        """
-                        response = model.generate_content(prompt)
-                        clean_json = response.text.replace("```json", "").replace("```", "").strip()
-                        st.session_state.prop_history = json.loads(clean_json)
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Hata: {e}")
+                status_box = st.empty()
+                status_box.info("Belgeler okunuyor...")
+                
+                genai.configure(api_key=api_key)
+                full_text = ""
+                for f in uploaded_files:
+                    full_text += f"\nDOC: {f.name}\n" + get_genealogy_file_text(f, api_key)
+                
+                try:
+                    status_box.info("AI Zinciri kuruyor...")
+                    model = genai.GenerativeModel('gemini-1.5-flash')
+                    prompt = f"""
+                    GÖREV: Metinlerdeki mülkiyet devirlerini JSON listesi yap.
+                    METİN: {full_text[:40000]}
+                    FORMAT: [{{"yil": "...", "kimden": "...", "kime": "...", "islem": "...", "durum": "Aktif/Pasif/Kritik"}}]
+                    SADECE JSON VER.
+                    """
+                    response = model.generate_content(prompt)
+                    clean_json = response.text.replace("```json", "").replace("```", "").strip()
+                    st.session_state.prop_history = json.loads(clean_json)
+                    status_box.success("Tamamlandı!")
+                    time.sleep(1)
+                    st.rerun()
+                except Exception as e:
+                    status_box.error(f"Hata: {e}")
 
         st.dataframe(st.session_state.prop_history, height=300)
         if st.button("Temizle"):
@@ -1171,34 +1176,44 @@ def render_property_genealogy(api_key):
             
             st.divider()
             
-            # --- DÜZELTİLEN KISIM (HIZLI ANALİZ) ---
-            if st.button("🕵️ Hızlı Risk Analizi Yap"):
-                with st.spinner("Riskler taranıyor (Hızlı Mod)..."):
-                    try:
-                        # BURADA 'FLASH' MODELİNE GEÇTİK (Çok daha hızlı)
-                        model = genai.GenerativeModel('gemini-1.5-flash')
+            # --- DÜZELTİLEN KISIM (STREAMING / CANLI YAZMA) ---
+            if st.button("🕵️ Risk Analizi Başlat"):
+                output_placeholder = st.empty() # Boş bir kutu oluştur
+                output_placeholder.text("Analiz başlıyor...")
+                
+                try:
+                    genai.configure(api_key=api_key)
+                    model = genai.GenerativeModel('gemini-1.5-flash')
+                    
+                    chain_data = json.dumps(st.session_state.prop_history, ensure_ascii=False)
+                    
+                    prompt = f"""
+                    GÖREV: Sen uzman bir tapu denetçisisin. Aşağıdaki mülkiyet zincirini analiz et.
+                    VERİ: {chain_data}
+                    
+                    Lütfen şu başlıklar altında rapor yaz:
+                    1. 🔴 Kritik Riskler
+                    2. ⚠️ Hukuki Uyarılar
+                    3. ✅ Sonuç
+                    """
+                    
+                    # stream=True ile parça parça alıyoruz
+                    response = model.generate_content(prompt, stream=True)
+                    
+                    full_text = ""
+                    for chunk in response:
+                        full_text += chunk.text
+                        # Her kelimede ekrandaki kutuyu güncelle
+                        output_placeholder.markdown(full_text + "▌") 
+                    
+                    # İmleci kaldır ve son hali göster
+                    output_placeholder.markdown(full_text)
                         
-                        chain_data = json.dumps(st.session_state.prop_history, ensure_ascii=False)
-                        
-                        # Prompt'u kısalttık ve netleştirdik
-                        prompt = f"""
-                        GÖREV: Sen uzman bir tapu denetçisisin. Aşağıdaki mülkiyet zincirini analiz et.
-                        
-                        VERİ: {chain_data}
-                        
-                        Lütfen şu başlıklar altında KISA ve NET bir rapor yaz:
-                        1. 🔴 **Kritik Riskler:** (Ölü görünenler, intikali yapılmamışlar, kayıp halkalar)
-                        2. ⚠️ **Hukuki Uyarılar:** (Zamanaşımı, kadastro hatası ihtimali)
-                        3. ✅ **Sonuç:** (Bu taşınmaz güvenli mi?)
-                        """
-                        
-                        response = model.generate_content(prompt)
-                        st.markdown(response.text)
-                        
-                    except Exception as e:
-                        st.error(f"Bağlantı hatası: {e}. Lütfen tekrar deneyin.")
+                except Exception as e:
+                    output_placeholder.error(f"Hata oluştu: {e}")
         else:
             st.info("👈 Veri yok.")
+
 
 
 
