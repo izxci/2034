@@ -1497,6 +1497,7 @@ def main():
         # Mevcut Listeyi Göster
         if st.session_state.mevzuat_takip_listesi:
             st.write("📋 **Şu An Takip Edilenler:**")
+            import pandas as pd
             st.table(pd.DataFrame(st.session_state.mevzuat_takip_listesi))
         
         st.divider()
