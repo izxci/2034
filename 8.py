@@ -379,7 +379,8 @@ def render_checkup_module(api_key):
                     try:
                         if uploaded_file.name.endswith(".pdf"):
                             reader = PyPDF2.PdfReader(uploaded_file)
-                            file_text = reader.pages[0].extract_text()
+                            if len(reader.pages) > 0:
+                                file_text = reader.pages[0].extract_text()
                         elif uploaded_file.name.endswith(".txt"):
                             file_text = uploaded_file.getvalue().decode("utf-8")
                     except: pass
@@ -405,26 +406,40 @@ def render_checkup_module(api_key):
                     match = re.search(r"SKOR:\s*(\d+)", ai_response)
                     if match: risk_score = int(match.group(1))
 
-                    # Hız Göstergesi (Gauge)
-                    fig = go.Figure(go.Indicator(
-                        mode = "gauge+number",
-                        value = risk_score,
-                        title = {'text': "Hukuki Sağlamlık Skoru"},
-                        gauge = {
-                            'axis': {'range': [None, 100]},
-                            'bar': {'color': "black"},
-                            'steps': [
-                                {'range': [0, 50], 'color': "#ff4d4d"},
-                                {'range': [50, 80], 'color': "#ffcc00"},
-                                {'range': [80, 100], 'color': "#33cc33"}
-                            ],
-                            'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': risk_score}
-                        }
-                    ))
-                    fig.update_layout(height=250, margin=dict(l=20, r=20, t=30, b=20))
-                    st.plotly_chart(fig, use_container_width=True)
+                    # --- GÖRSELLEŞTİRME (HATA ÖNLEYİCİ MOD) ---
+                    if PLOTLY_VAR:
+                        # Plotly varsa havalı göstergeyi çiz
+                        fig = go.Figure(go.Indicator(
+                            mode = "gauge+number",
+                            value = risk_score,
+                            title = {'text': "Hukuki Sağlamlık Skoru"},
+                            gauge = {
+                                'axis': {'range': [None, 100]},
+                                'bar': {'color': "black"},
+                                'steps': [
+                                    {'range': [0, 50], 'color': "#ff4d4d"},
+                                    {'range': [50, 80], 'color': "#ffcc00"},
+                                    {'range': [80, 100], 'color': "#33cc33"}
+                                ],
+                                'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': risk_score}
+                            }
+                        ))
+                        fig.update_layout(height=250, margin=dict(l=20, r=20, t=30, b=20))
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        # Plotly yoksa standart bar kullan (Çökmemesi için)
+                        st.metric("Hukuki Sağlamlık Skoru", f"{risk_score} / 100")
+                        st.progress(risk_score / 100)
+                        if risk_score < 50:
+                            st.error("Risk Seviyesi: YÜKSEK")
+                        elif risk_score < 80:
+                            st.warning("Risk Seviyesi: ORTA")
+                        else:
+                            st.success("Risk Seviyesi: DÜŞÜK")
+                    
                     st.markdown("### 📋 Risk Raporu")
                     st.write(ai_response.replace(f"SKOR: {risk_score}", ""))
+
 
 def render_time_machine(api_key):
     st.info("Bir olay tarihi girin, sistem sizi o güne götürsün. O gün geçerli olan kanun maddesini ve faiz oranlarını görün.")
