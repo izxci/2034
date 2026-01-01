@@ -2207,8 +2207,8 @@ def render_corporate_memory(api_key):
 
 
 def render_cost_calculator_module(api_key):
-    st.header("💰 Dava Maliyeti ve Harç Hesaplama Robotu (2025 Güncel)")
-    st.info("ℹ️ Veriler: 2025 Harçlar Kanunu Genel Tebliği (Seri No: 94) ve 2024-2025 AAÜT Tarifesine göre güncellenmiştir.")
+    st.header("💰 Dava Maliyeti ve Harç Hesaplama Robotu (2026 Projeksiyonu)")
+    st.warning("⚠️ DİKKAT: Bu hesaplama, beklenen 2026 Yeniden Değerleme Oranlarına (Tahmini %45-50 Artış) göre simüle edilmiştir.")
 
     # --- GİRDİLER ---
     col1, col2 = st.columns(2)
@@ -2216,96 +2216,116 @@ def render_cost_calculator_module(api_key):
     with col1:
         dava_turu = st.selectbox("Dava Türü", [
             "Asliye Hukuk (Konusu Para Olan)", 
-            "Asliye Hukuk (Maktu - Örn: Tapu İptal Tescil)", 
+            "Asliye Hukuk (Maktu - Örn: Tapu İptal)", 
             "İş Mahkemesi (İşe İade)", 
             "İş Mahkemesi (Alacak)", 
             "Tüketici Mahkemesi", 
             "Sulh Hukuk (Tahliye)",
-            "İcra Takibi"
+            "İcra Takibi",
+            "İdare Mahkemesi (İptal Davası)",      # YENİ
+            "İdare Mahkemesi (Tam Yargı - Tazminat)" # YENİ
         ])
         
+        # Dinamik Girdi Alanları
         dava_degeri = 0.0
-        # Maktu davalarda değer girmeye gerek yok (veya sembolik)
-        if "Maktu" not in dava_turu and "İşe İade" not in dava_turu and "Tahliye" not in dava_turu:
-            dava_degeri = st.number_input("Dava Değeri (TL)", min_value=0.0, value=100000.0, step=1000.0, format="%.2f")
+        yd_talebi = False
         
-        # Tahliye davasında yıllık kira bedeli istenir
+        # İdari Davalarda YD Talebi Sorusu
+        if "İdare" in dava_turu:
+            yd_talebi = st.checkbox("Yürütmeyi Durdurma (YD) İsteniyor mu?", value=True)
+
+        # Değer Girilmesi Gereken Durumlar
+        if any(x in dava_turu for x in ["Konusu Para", "Alacak", "Tam Yargı", "İcra"]):
+            dava_degeri = st.number_input("Dava/Talep Değeri (TL)", min_value=0.0, value=150000.0, step=1000.0, format="%.2f")
+        
+        # Tahliye Davası (Yıllık Kira)
         if "Tahliye" in dava_turu:
-            aylik_kira = st.number_input("Aylık Kira Bedeli (TL)", min_value=0.0, value=10000.0)
-            dava_degeri = aylik_kira * 12 # Tahliye harcı yıllık kira üzerinden hesaplanır
+            aylik_kira = st.number_input("Aylık Kira Bedeli (TL)", min_value=0.0, value=15000.0)
+            dava_degeri = aylik_kira * 12 
     
     with col2:
         davaci_sayisi = st.number_input("Davacı Sayısı", min_value=1, value=1)
-        davali_sayisi = st.number_input("Davalı Sayısı", min_value=1, value=1)
-        tanik_sayisi = st.number_input("Dinlenecek Tanık Sayısı", min_value=0, value=2)
+        davali_sayisi = st.number_input("Davalı/İdare Sayısı", min_value=1, value=1)
+        tanik_sayisi = st.number_input("Dinlenecek Tanık Sayısı", min_value=0, value=0 if "İdare" in dava_turu else 2)
         bilirkisi_sayisi = st.number_input("Bilirkişi Sayısı", min_value=0, value=1)
 
     # --- HESAPLAMA BUTONU ---
-    if st.button("🧮 2025 Tarifesine Göre Hesapla", type="primary"):
+    if st.button("🧮 2026 Tarifesine Göre Hesapla", type="primary"):
         
         # ==========================================
-        # 🏛️ 2025 RESMİ VERİLERİ (YDO %43,93)
+        # 🏛️ 2026 TAHMİNİ VERİLER (YDO Artışlı)
         # ==========================================
         
-        # Harçlar (Harçlar Kanunu Genel Tebliği Seri No: 94)
-        BASVURMA_HARCI_SULH = 338.00  # Sulh Mahkemeleri
-        BASVURMA_HARCI_ASLIYE = 674.50 # Asliye Mahkemeleri
-        VEKALET_HARCI = 96.00          # 2025 Vekalet Pulu
-        KARAR_ILAM_HARCI_MAKTU = 674.50
+        # Harçlar (Tahmini)
+        BASVURMA_HARCI_SULH = 500.00
+        BASVURMA_HARCI_ASLIYE = 980.00
+        BASVURMA_HARCI_IDARE = 980.00
+        BASVURMA_HARCI_VERGI = 980.00
         
-        # Giderler (Tahmini 2025 Rayiçleri)
-        DOSYA_GIDERI = 200.00
-        TEBLIGAT_UCRETI = 210.00       # PTT Zamlı Tarife Tahmini
-        TANIK_UCRETI = 150.00
-        BILIRKISI_UCRETI = 3000.00     # Ortalama Bilirkişi
-        KESIF_HARCI = 2200.00
+        VEKALET_HARCI = 140.00          # Baro Pulu (Tahmini)
+        KARAR_ILAM_HARCI_MAKTU = 980.00
+        YD_HARCI = 550.00               # Yürütmeyi Durdurma Harcı (Tahmini)
         
-        # AAÜT MAKTU ÜCRETLER (2024-2025 Tarifesi)
-        AAUT_ASLIYE_MAKTU = 26000.00
-        AAUT_SULH_MAKTU = 18000.00
-        AAUT_ICRA_MAKTU = 6000.00
-        AAUT_ISE_IADE = 26000.00
-        AAUT_TUKETICI = 18000.00 # Değeri az olanlar için değişebilir ama ortalama
+        # Giderler (Enflasyon Farkı Eklenmiş)
+        DOSYA_GIDERI = 300.00
+        TEBLIGAT_UCRETI = 300.00       # PTT 2026 Tahmini
+        TANIK_UCRETI = 250.00
+        BILIRKISI_UCRETI = 4500.00     # Bilirkişi ücretleri artış eğiliminde
+        KESIF_HARCI = 3500.00
+        
+        # AAÜT MAKTU ÜCRETLER (2026 Tahmini - %45 Artış)
+        AAUT_ASLIYE_MAKTU = 38000.00
+        AAUT_SULH_MAKTU = 26000.00
+        AAUT_ICRA_MAKTU = 9000.00
+        AAUT_ISE_IADE = 38000.00
+        AAUT_IDARE_MAKTU = 26000.00     # İptal davaları için
+        AAUT_TUKETICI = 26000.00
 
         # --- HESAPLAMA MOTORU ---
         gider_avansi = 0.0
         pesin_harc = 0.0
         basvurma_harci = 0.0
         vekalet_ucreti = 0.0
+        ekstra_harclar = 0.0 # YD harcı vb.
         
-        # 1. Başvurma Harcı Belirleme
+        # 1. Başvurma Harcı
         if "Sulh" in dava_turu or "İcra" in dava_turu:
             basvurma_harci = BASVURMA_HARCI_SULH
         elif "Tüketici" in dava_turu:
-            basvurma_harci = 0 # Tüketici harçtan muaf
+            basvurma_harci = 0 
+        elif "İdare" in dava_turu:
+            basvurma_harci = BASVURMA_HARCI_IDARE
         else:
             basvurma_harci = BASVURMA_HARCI_ASLIYE
 
-        # 2. Gider Avansı Hesabı
+        # 2. Gider Avansı
         tebligat_gideri = (davaci_sayisi + davali_sayisi) * 3 * TEBLIGAT_UCRETI 
         tanik_gideri = tanik_sayisi * TANIK_UCRETI
         bilirkisi_gideri = bilirkisi_sayisi * BILIRKISI_UCRETI
-        diger_isler = 750.00 # Kırtasiye vb. arttı
+        diger_isler = 1000.00 # Kırtasiye 2026
         
         gider_avansi = tebligat_gideri + tanik_gideri + bilirkisi_gideri + diger_isler + DOSYA_GIDERI
 
-        # 3. Peşin Harç Hesabı (Nispi/Maktu)
-        if "Maktu" in dava_turu or "İşe İade" in dava_turu:
+        # 3. Peşin / Karar Harcı Hesabı
+        if "Maktu" in dava_turu or "İşe İade" in dava_turu or "İptal" in dava_turu:
             pesin_harc = KARAR_ILAM_HARCI_MAKTU
         elif "Tüketici" in dava_turu:
             pesin_harc = 0
         elif "İcra" in dava_turu:
-            pesin_harc = dava_degeri * 0.005 # İcrada peşin harç binde 5
+            pesin_harc = dava_degeri * 0.005 
         else:
-            # Nispi Harç (%6.831) - Dörtte biri peşin
-            # 2025'te oran değişmedi, matrahlar değişti.
+            # Nispi Harç (%6.831) - Oran genelde sabittir, matrah değişir
             toplam_harc = dava_degeri * 0.06831
             pesin_harc = toplam_harc / 4
-        
-        # 4. AAÜT (Avukatlık Asgari Ücret) Hesabı
-        # Kaynak: 2024-2025 AAÜT Resmi Gazete
-        
-        if "Maktu" in dava_turu:
+            
+        # İdari Yargı Özel: Yürütmeyi Durdurma Harcı
+        if yd_talebi:
+            ekstra_harclar += YD_HARCI
+
+        # 4. AAÜT (Avukatlık Ücreti) 2026 Tahmini
+        if "İptal" in dava_turu:
+            vekalet_ucreti = AAUT_IDARE_MAKTU
+        elif "Maktu" in dava_turu:
             vekalet_ucreti = AAUT_ASLIYE_MAKTU
         elif "İşe İade" in dava_turu:
             vekalet_ucreti = AAUT_ISE_IADE
@@ -2314,104 +2334,85 @@ def render_cost_calculator_module(api_key):
         elif "Tüketici" in dava_turu:
             vekalet_ucreti = AAUT_TUKETICI
         else:
-            # NİSPİ VEKALET HESABI (Dilimli Tarife)
-            # İlk 400.000 TL -> %16
-            # Sonraki 400.000 TL -> %15
-            # Sonraki 800.000 TL -> %14
-            # Sonraki 2.400.000 TL -> %11
-            # Sonraki 4.000.000 TL -> %8
-            
+            # NİSPİ VEKALET (Dilimler 2026 için genişletildi)
             kalan = dava_degeri
             hesap = 0.0
             
-            # Dilim 1
-            dilim1 = min(kalan, 400000)
+            # Dilim 1: 600.000 TL'ye kadar %16 (Tahmini artış)
+            dilim1 = min(kalan, 600000)
             hesap += dilim1 * 0.16
             kalan -= dilim1
             
             # Dilim 2
             if kalan > 0:
-                dilim2 = min(kalan, 400000)
+                dilim2 = min(kalan, 600000)
                 hesap += dilim2 * 0.15
                 kalan -= dilim2
                 
-            # Dilim 3
+            # Dilim 3 ve sonrası...
             if kalan > 0:
-                dilim3 = min(kalan, 800000)
-                hesap += dilim3 * 0.14
-                kalan -= dilim3
-            
-            # Dilim 4
-            if kalan > 0:
-                dilim4 = min(kalan, 2400000)
-                hesap += dilim4 * 0.11
-                kalan -= dilim4
-            
-            # Dilim 5 ve üzeri (Basitleştirilmiş %8 devamı)
-            if kalan > 0:
-                hesap += kalan * 0.08
+                hesap += kalan * 0.14 # Basitleştirilmiş devamı
 
-            # Asgari sınır kontrolü (Asliye için maktu altına düşemez)
-            if "Asliye" in dava_turu:
+            # Alt sınır kontrolü
+            if "İdare" in dava_turu: # Tam Yargı
+                vekalet_ucreti = max(hesap, AAUT_IDARE_MAKTU)
+            elif "Asliye" in dava_turu:
                 vekalet_ucreti = max(hesap, AAUT_ASLIYE_MAKTU)
             elif "Sulh" in dava_turu:
                 vekalet_ucreti = max(hesap, AAUT_SULH_MAKTU)
-            elif "İcra" in dava_turu:
-                vekalet_ucreti = max(hesap, AAUT_ICRA_MAKTU)
             else:
                 vekalet_ucreti = hesap
 
-        toplam_ilk_masraf = basvurma_harci + VEKALET_HARCI + pesin_harc + gider_avansi
+        toplam_ilk_masraf = basvurma_harci + VEKALET_HARCI + pesin_harc + gider_avansi + ekstra_harclar
 
         # --- SONUÇ EKRANI ---
         st.divider()
-        st.subheader("📋 2025 Dava Maliyet Tablosu")
+        st.subheader("📋 2026 Dava Maliyet Projeksiyonu")
         
         c_res1, c_res2, c_res3 = st.columns(3)
-        c_res1.metric("Toplam İlk Masraf (Müvekkilden İstenen)", f"{toplam_ilk_masraf:,.2f} TL", help="Harçlar + Gider Avansı + Baro Pulu")
-        c_res2.metric("Karşı Yan Vekalet Ücreti (Risk)", f"{vekalet_ucreti:,.2f} TL", help="Kaybedilirse karşı tarafa ödenecek tutar")
+        c_res1.metric("Toplam İlk Masraf", f"{toplam_ilk_masraf:,.2f} TL", help="Müvekkilden talep edilecek toplam tutar")
+        c_res2.metric("Karşı Yan Vekalet (Risk)", f"{vekalet_ucreti:,.2f} TL", help="Kaybedilirse ödenecek tutar")
         c_res3.metric("Peşin Harç", f"{pesin_harc:,.2f} TL")
         
         # Detay Tablosu
-        detay_data = {
-            "Kalem": ["Başvurma Harcı", "Peşin Harç", "Gider Avansı", "Vekalet Harcı (Baro Pulu)", "TOPLAM"],
-            "Tutar (TL)": [
-                f"{basvurma_harci:,.2f}", 
-                f"{pesin_harc:,.2f}", 
-                f"{gider_avansi:,.2f}", 
-                f"{VEKALET_HARCI:,.2f}", 
-                f"**{toplam_ilk_masraf:,.2f}**"
-            ]
-        }
-        st.table(pd.DataFrame(detay_data))
+        detay_list = [
+            ["Başvurma Harcı", f"{basvurma_harci:,.2f}"],
+            ["Peşin / Karar Harcı", f"{pesin_harc:,.2f}"],
+            ["Gider Avansı (Bilirkişi, Tebligat)", f"{gider_avansi:,.2f}"],
+            ["Vekalet Harcı (Baro Pulu)", f"{VEKALET_HARCI:,.2f}"]
+        ]
+        if yd_talebi:
+            detay_list.append(["Yürütmeyi Durdurma Harcı", f"{YD_HARCI:,.2f}"])
+            
+        detay_list.append(["**TOPLAM**", f"**{toplam_ilk_masraf:,.2f}**"])
         
-        st.caption("*Not: Gider avansı; tebligat, bilirkişi ve tanık ücretlerini kapsar. Kullanılmayan kısım dava sonunda iade edilir.*")
+        df_detay = pd.DataFrame(detay_list, columns=["Kalem", "Tutar (TL)"])
+        st.table(df_detay)
         
-        # --- AI İLE RAPOR OLUŞTURMA ---
-        st.subheader("📝 Müvekkil Bilgilendirme Notu")
+        # --- AI RAPOR ---
+        st.subheader("📝 2026 Müvekkil Bilgilendirme Notu")
         if api_key:
-            with st.spinner("AI, 2025 tarifelerine uygun açıklama yazıyor..."):
+            with st.spinner("AI, 2026 projeksiyonlarına göre rapor hazırlıyor..."):
                 prompt = f"""
                 GÖREV: Bir avukat olarak müvekkile dava masraflarını açıklayan profesyonel bir mesaj yaz.
                 
-                VERİLER (2025 YILI GÜNCEL):
+                DURUM:
+                - Yıl: 2026 (Tahmini Rakamlar)
                 - Dava Türü: {dava_turu}
-                - Dava Değeri: {dava_degeri:,.2f} TL
-                - Toplam İlk Masraf: {toplam_ilk_masraf:,.2f} TL
-                - Başvurma ve Peşin Harç: {pesin_harc + basvurma_harci:,.2f} TL
-                - Gider Avansı: {gider_avansi:,.2f} TL
+                - Yürütmeyi Durdurma Talebi: {"Var" if yd_talebi else "Yok"}
+                - Toplam Masraf: {toplam_ilk_masraf:,.2f} TL
+                - Karşı Yan Vekalet Riski: {vekalet_ucreti:,.2f} TL
                 
-                MESAJ İÇERİĞİ:
-                1. Masrafların 2025 yılı resmi harç tarifelerine göre hesaplandığını belirt.
-                2. Gider avansının (Bilirkişi, tebligat vb.) kullanılmayan kısmının iade edileceğini mutlaka söyle.
-                3. Karşı taraf vekalet ücreti riskinden ({vekalet_ucreti:,.2f} TL) kısaca bahset (Dava kaybedilirse doğacak risk).
-                4. Güven verici, profesyonel bir dil kullan.
+                İÇERİK:
+                1. Masrafların 2026 yılı tahmini harç ve giderlerine göre hesaplandığını belirt.
+                2. İdari dava ise Yürütmeyi Durdurma (YD) harcının dahil olup olmadığını belirt.
+                3. Gider avansının (Bilirkişi, tebligat vb.) kullanılmayan kısmının iade edileceğini vurgula.
+                4. Güven verici, net bir dil kullan.
                 """
                 aciklama = get_ai_response(prompt, api_key)
                 st.markdown(f"<div class='buyur-abi-kutusu'>{aciklama}</div>", unsafe_allow_html=True)
                 
-                st.download_button("📩 Raporu İndir (Word)", create_word_file(aciklama + f"\n\nDETAYLAR:\nToplam: {toplam_ilk_masraf} TL"), "2025_Masraf_Raporu.docx")
-
+                st.download_button("📩 Raporu İndir (Word)", create_word_file(aciklama + f"\n\nTOPLAM: {toplam_ilk_masraf} TL"), "2026_Maliyet_Raporu.docx")
 
 
 
