@@ -2251,11 +2251,6 @@ def main():
         st.caption(f"Kütüphane Sürümü: {lib_ver}")
         
         st.divider()
-        st.header("📁 Dosya Bilgileri")
-        input_davaci = st.text_input("Davacı")
-        input_davali = st.text_input("Davalı")
-        input_mahkeme = st.text_input("Mahkeme")
-        input_dosya_no = st.text_input("Dosya No")
         
         if st.button("🗑️ Ekranı Temizle"):
             st.session_state.clear()
