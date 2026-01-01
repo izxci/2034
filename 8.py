@@ -1,4 +1,8 @@
 import pandas as pd  # <--- BU SATIRI EN BAŞA EKLEYİN
+import requests
+from bs4 import BeautifulSoup
+import io
+import PyPDF2
 import streamlit as st
 import time
 import zipfile
@@ -1466,90 +1470,196 @@ def main():
                     </div>
                     """, unsafe_allow_html=True)
     with tab33: # Mevzuat Etki Analizi (Impact Analysis)
-        st.subheader("📡 Kişiselleştirilmiş Mevzuat Etki Analizi")
-        st.info("Takip etmek istediğiniz kanunları ve ilgili dosyalarınızı listeye ekleyin. Yeni bir değişiklik olduğunda sistem sizi özel olarak uyarır.")
-        
-        # --- 1. TAKİP LİSTESİ YÖNETİMİ ---
+        st.subheader("📡 Akıllı Mevzuat Radarı & Etki Analizi")
+        st.info("Bu modül, Resmi Gazete'yi günlük olarak tarar ve SADECE sizin takip listenizdeki dosyaları etkileyen değişiklikleri raporlar.")
+
+        # --- 1. TAKİP LİSTESİ YÖNETİMİ (Sizin Kodunuzdan Geliştirildi) ---
         if 'mevzuat_takip_listesi' not in st.session_state:
             st.session_state.mevzuat_takip_listesi = []
-            
-        with st.expander("➕ Yeni Takip Kuralı Ekle", expanded=True):
+
+        with st.expander("📋 Takip Listesi & Dosya Tanımlama", expanded=False):
             col_takip1, col_takip2, col_takip3 = st.columns(3)
             with col_takip1:
-                takip_kanun = st.text_input("Kanun/Yönetmelik Adı", placeholder="Örn: İş Kanunu")
+                takip_kanun = st.text_input("Kanun/Mevzuat Adı", placeholder="Örn: İmar Kanunu")
             with col_takip2:
-                takip_keyword = st.text_input("Anahtar Kelime (Konu)", placeholder="Örn: Kıdem Tazminatı, Zamanaşımı")
+                takip_keyword = st.text_input("Anahtar Kelime (Konu)", placeholder="Örn: Ruhsat, İskan")
             with col_takip3:
-                takip_dosya = st.text_input("Etkilenecek Dosya No", placeholder="Örn: 2023/15 Esas")
+                takip_dosya = st.text_input("İlgili Dosya No", placeholder="Örn: 2024/15 E.")
                 
-            if st.button("Listeye Ekle"):
-                if takip_kanun and takip_keyword:
+            if st.button("Listeye Ekle", use_container_width=True):
+                if takip_keyword:
                     yeni_kural = {
-                        "kanun": takip_kanun,
+                        "kanun": takip_kanun if takip_kanun else "Genel",
                         "konu": takip_keyword,
-                        "dosya": takip_dosya
+                        "dosya": takip_dosya if takip_dosya else "Genel Bilgi"
                     }
                     st.session_state.mevzuat_takip_listesi.append(yeni_kural)
-                    st.success(f"✅ {takip_kanun} ({takip_keyword}) takibe alındı.")
+                    st.success(f"✅ '{takip_keyword}' konusu takibe alındı.")
                 else:
-                    st.warning("Lütfen Kanun adı ve Konu giriniz.")
+                    st.warning("En azından bir Anahtar Kelime girmelisiniz.")
 
-        # Mevcut Listeyi Göster
-        if st.session_state.mevzuat_takip_listesi:
-            st.write("📋 **Şu An Takip Edilenler:**")
-            import pandas as pd
-            st.table(pd.DataFrame(st.session_state.mevzuat_takip_listesi))
-        
-        st.divider()
-        
-        # --- 2. ANALİZ MOTORU ---
-        st.write("🔍 **Değişiklik Kontrolü**")
-        yeni_mevzuat_metni = st.text_area("Yeni Resmi Gazete / Kanun Metnini Yapıştırın:", height=200, placeholder="Bugün yayınlanan kanun değişikliği metnini buraya yapıştırın...")
-        
-        if st.button("Etki Analizini Başlat", type="primary"):
-            if not api_key: st.error("API Key gerekli.")
-            elif not st.session_state.mevzuat_takip_listesi: st.warning("Takip listeniz boş. Önce yukarıdan kural ekleyin.")
-            elif not yeni_mevzuat_metni: st.warning("Analiz edilecek metni girmediniz.")
+            # Mevcut Listeyi Göster
+            if st.session_state.mevzuat_takip_listesi:
+                st.markdown("###### 📝 Aktif Takip Listesi")
+                df_takip = pd.DataFrame(st.session_state.mevzuat_takip_listesi)
+                st.table(df_takip)
             else:
-                with st.spinner("Takip listeniz taranıyor ve dosya eşleşmeleri yapılıyor..."):
-                    # Listeyi JSON formatına çevirip AI'ya veriyoruz
-                    takip_json = json.dumps(st.session_state.mevzuat_takip_listesi, ensure_ascii=False)
-                    
-                    prompt = f"""
-                    GÖREV: Sen bir Mevzuat Analiz Uzmanısın.
-                    
-                    GİRDİLER:
-                    1. KULLANICI TAKİP LİSTESİ: {takip_json}
-                    2. YENİ MEVZUAT METNİ: {yeni_mevzuat_metni}
-                    
-                    YAPMAN GEREKEN:
-                    Yeni metni oku. Eğer metindeki değişiklikler, kullanıcının takip listesindeki "Kanun" ve "Konu" ile eşleşiyorsa bir UYARI RAPORU oluştur.
-                    
-                    ÇIKTI FORMATI:
-                    Eğer eşleşme varsa:
-                    "🚨 **ALARM: [Dosya No] Risk Altında!**"
-                    - **Değişiklik:** [Kısaca ne değişti?]
-                    - **Etkisi:** [Bu değişiklik kullanıcının dosyasını nasıl etkiler?]
-                    - **Aksiyon:** [Avukat ne yapmalı?]
-                    
-                    Eğer eşleşme yoksa:
-                    "✅ Bu değişiklik takip listenizdeki dosyaları etkilemiyor."
-                    """
-                    
-                    analiz_sonucu = get_ai_response(prompt, api_key)
-                    
-                    if "ALARM" in analiz_sonucu or "Risk" in analiz_sonucu:
-                        st.markdown(f"""
-                        <div style="background-color:#ffe6e6; padding:20px; border-radius:10px; border-left: 5px solid #ff0000;">
-                            {analiz_sonucu}
-                        </div>
-                        """, unsafe_allow_html=True)
+                st.info("Henüz takip kuralı eklemediniz.")
+
+        st.divider()
+
+        # --- 2. TARAMA MOTORU (Otomatik + Manuel Seçenekli) ---
+        scan_option = st.radio("Analiz Yöntemi Seçin:", ["🌍 Resmi Gazete'yi Otomatik Tara", "✍️ Metni Manuel Yapıştır"])
+
+        # A) OTOMATİK TARAMA MODU (Benim Kodumdan Entegre Edildi)
+        if scan_option == "🌍 Resmi Gazete'yi Otomatik Tara":
+            col_scan1, col_scan2 = st.columns([1, 3])
+            
+            with col_scan1:
+                st.markdown("##### ⚙️ Ayarlar")
+                scan_depth = st.radio("Tarama Derinliği:", ["Hızlı (Başlıklar)", "Derin (PDF İçerikleri)"])
+                scan_mode = st.selectbox("Veri Kaynağı:", ["Canlı (Resmi Gazete)", "Simülasyon (Test)"])
+                start_btn = st.button("🚀 Taramayı Başlat", type="primary", use_container_width=True)
+
+            with col_scan2:
+                if start_btn:
+                    if not st.session_state.mevzuat_takip_listesi:
+                        st.error("Önce yukarıdan takip listesine en az bir konu ekleyin!")
                     else:
-                        st.markdown(f"""
-                        <div style="background-color:#e6fffa; padding:20px; border-radius:10px; border-left: 5px solid #00cc99;">
-                            {analiz_sonucu}
-                        </div>
-                        """, unsafe_allow_html=True)
+                        found_matches = []
+                        status_box = st.empty()
+                        progress_bar = st.progress(0)
+                        
+                        # Simülasyon Verisi (Test için)
+                        mock_content = "Bugün yayınlanan kararda, İmar Kanunu kapsamında ruhsat iptalleriyle ilgili yeni düzenleme yapılmıştır. İskan izinleri..."
+                        
+                        try:
+                            # 1. LİNKLERİ TOPLA
+                            status_box.info("Resmi Gazete indeksleniyor...")
+                            
+                            if scan_mode == "Canlı (Resmi Gazete)":
+                                url = "https://www.resmigazete.gov.tr/"
+                                headers = {'User-Agent': 'Mozilla/5.0'}
+                                response = requests.get(url, headers=headers, timeout=10)
+                                soup = BeautifulSoup(response.content, 'html.parser')
+                                raw_links = soup.find_all('a', href=True)
+                                
+                                # Linkleri temizle
+                                target_links = []
+                                for link in raw_links:
+                                    href = link['href']
+                                    title = link.get_text().strip()
+                                    if len(title) > 5 and (".pdf" in href or "htm" in href):
+                                        full_link = href if href.startswith("http") else f"https://www.resmigazete.gov.tr{href}"
+                                        target_links.append({"title": title, "link": full_link})
+                            else:
+                                # Simülasyon linki
+                                target_links = [{"title": "7440 Sayılı Kanun Değişikliği", "link": "simulasyon_link"}]
+
+                            # 2. İÇERİKLERİ TARA VE EŞLEŞTİR
+                            total_docs = len(target_links)
+                            
+                            for i, doc in enumerate(target_links):
+                                progress_bar.progress((i + 1) / total_docs)
+                                doc_text = ""
+                                
+                                # İçeriği Çek (Canlı veya Simülasyon)
+                                if scan_mode == "Canlı (Resmi Gazete)":
+                                    if scan_depth == "Derin (PDF İçerikleri)":
+                                        try:
+                                            r_doc = requests.get(doc['link'], headers=headers, timeout=5)
+                                            if doc['link'].endswith(".pdf"):
+                                                f = io.BytesIO(r_doc.content)
+                                                reader = PyPDF2.PdfReader(f)
+                                                for p in range(min(3, len(reader.pages))):
+                                                    doc_text += reader.pages[p].extract_text()
+                                            else:
+                                                doc_text = BeautifulSoup(r_doc.content, 'html.parser').get_text()
+                                        except:
+                                            doc_text = doc['title'] # Hata olursa sadece başlığa bak
+                                    else:
+                                        doc_text = doc['title']
+                                else:
+                                    doc_text = mock_content # Simülasyon metni
+
+                                # Takip Listesiyle Karşılaştır
+                                for item in st.session_state.mevzuat_takip_listesi:
+                                    keyword = item['konu']
+                                    if keyword.lower() in doc_text.lower():
+                                        found_matches.append({
+                                            "doc_title": doc['title'],
+                                            "doc_link": doc['link'],
+                                            "matched_item": item, # Eşleşen kural (Dosya no vb.)
+                                            "context": doc_text[:1000] # AI için metin
+                                        })
+
+                            progress_bar.empty()
+                            
+                            # 3. SONUÇLARI GÖSTER VE AI ANALİZİ YAP
+                            if found_matches:
+                                status_box.success(f"🚨 {len(found_matches)} adet kritik eşleşme bulundu!")
+                                
+                                for match in found_matches:
+                                    with st.container():
+                                        st.markdown(f"""
+                                        <div style="border:1px solid #ddd; padding:15px; border-radius:10px; margin-bottom:10px; background-color:#fff;">
+                                            <h4>🔔 Uyarı: {match['matched_item']['dosya']} Dosyası</h4>
+                                            <p><strong>Sebep:</strong> '{match['matched_item']['konu']}' kelimesi, <em>{match['doc_title']}</em> içinde geçti.</p>
+                                            <a href="{match['doc_link']}" target="_blank">📄 Belgeyi Görüntüle</a>
+                                        </div>
+                                        """, unsafe_allow_html=True)
+                                        
+                                        # AI Analiz Butonu
+                                        if st.button(f"🧠 Etki Analizi Yap ({match['matched_item']['dosya']})", key=f"btn_{match['doc_link']}"):
+                                            if api_key:
+                                                with st.spinner("Yapay zeka mevzuatı dosyanızla ilişkilendiriyor..."):
+                                                    prompt = f"""
+                                                    GÖREV: Hukuki Etki Analizi
+                                                    
+                                                    DURUM:
+                                                    Kullanıcının takip ettiği dosya: {match['matched_item']['dosya']}
+                                                    İlgilendiği konu: {match['matched_item']['konu']}
+                                                    
+                                                    YENİ MEVZUAT METNİ (KESİT):
+                                                    {match['context']}
+                                                    
+                                                    SORU:
+                                                    Bu yeni mevzuat değişikliği, kullanıcının dosyasını nasıl etkiler? 
+                                                    Olumlu mu olumsuz mu? Ne yapılması gerekir?
+                                                    """
+                                                    res = get_ai_response(prompt, api_key)
+                                                    st.info(res)
+                                            else:
+                                                st.warning("API Key girilmemiş.")
+                            else:
+                                status_box.info("✅ Bugün takip listenizdeki konularla ilgili bir değişiklik yayınlanmadı.")
+
+                        except Exception as e:
+                            status_box.error(f"Tarama hatası: {e}")
+
+        # B) MANUEL YAPIŞTIRMA MODU (Sizin Kodunuzdan Entegre Edildi)
+        else:
+            st.markdown("##### 📝 Metin Analizi")
+            manual_text = st.text_area("Analiz edilecek mevzuat metnini buraya yapıştırın:", height=200)
+            
+            if st.button("Analiz Et", type="primary"):
+                if not manual_text or not st.session_state.mevzuat_takip_listesi:
+                    st.warning("Lütfen metin girin ve takip listenizin dolu olduğundan emin olun.")
+                elif api_key:
+                    with st.spinner("Takip listenizdeki dosyalar kontrol ediliyor..."):
+                        takip_json = json.dumps(st.session_state.mevzuat_takip_listesi, ensure_ascii=False)
+                        prompt = f"""
+                        GÖREV: Sen bir Mevzuat Analiz Uzmanısın.
+                        KULLANICI DOSYALARI: {takip_json}
+                        YENİ METİN: {manual_text}
+                        
+                        Bu metindeki değişiklikler yukarıdaki dosyalardan hangilerini etkiliyor?
+                        Her etkilenen dosya için kısa bir uyarı yaz.
+                        """
+                        res = get_ai_response(prompt, api_key)
+                        st.success("Analiz Tamamlandı")
+                        st.write(res)
+
     with tab34: # Semantik Arşiv Sorgulama (RAG) - OCR Destekli (Düzeltilmiş)
         st.subheader("🧠 Semantik Arşiv (OCR & Çoklu Format)")
         st.info("PDF, Word, UDF, TXT ve Resim (JPG, PNG) dosyalarını yükleyin. Sistem görselleri okur (OCR), metinleri tarar ve sorunuzun cevabını dosya adıyla birlikte verir.")
