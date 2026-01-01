@@ -2414,7 +2414,7 @@ def render_cost_calculator_module(api_key):
                 
                 st.download_button("📩 Raporu İndir (Word)", create_word_file(aciklama + f"\n\nTOPLAM: {toplam_ilk_masraf} TL"), "2026_Maliyet_Raporu.docx")
 
-def render_forensic_mapx_module(api_key):
+def render_forensic_map_module(api_key):
     st.header("🗺️ Adli Olay Yeri ve Kaza Rekonstrüksiyonu")
     st.info("Trafik ve iş kazalarında kusur analizi ve olay yeri canlandırması yapar.")
 
@@ -2660,7 +2660,7 @@ def main():
     with tabx3: render_expert_report_auditor(api_key)
     with tabx4: render_corporate_memory(api_key)
     with tabx5: render_cost_calculator_module(api_key)
-    with tabx6: render_forensic_mapx_module(api_key)
+    with tabx6: render_forensic_map_module(api_key)
     # --- TAB İÇERİKLERİ ---
 
     with tab1:
