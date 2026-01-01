@@ -1074,11 +1074,30 @@ def render_owner_mode(api_key):
                         except Exception as e:
                             st.error(f"Cevap üretilemedi: {e}")
 
+
 import json
 import time
 
 def render_property_genealogy(api_key):
     st.info("🌳 **Mülkiyet Soyağacı:** Tapu ve kadastro belgelerinizi yükleyin, AI zinciri kursun.")
+
+    # --- 0. AKILLI MODEL SEÇİCİ (HATA ÖNLEYİCİ) ---
+    def get_best_model():
+        """Hesapta aktif olan en hızlı modeli bulur."""
+        try:
+            available_models = []
+            for m in genai.list_models():
+                if 'generateContent' in m.supported_generation_methods:
+                    available_models.append(m.name)
+            
+            # Öncelik Sırası: 1. Flash (Hızlı), 2. Pro (Standart), 3. Herhangi biri
+            for m in available_models:
+                if 'flash' in m: return m
+            for m in available_models:
+                if 'pro' in m: return m
+            return available_models[0] if available_models else "models/gemini-pro"
+        except:
+            return "models/gemini-pro" # En kötü ihtimal yedeği
 
     # --- 1. DOSYA OKUMA ---
     def get_genealogy_file_text(file_obj, api_key_for_ocr):
@@ -1095,7 +1114,9 @@ def render_property_genealogy(api_key):
             elif filename.endswith(('.png', '.jpg', '.jpeg')):
                 if api_key_for_ocr:
                     image = Image.open(io.BytesIO(file_bytes))
-                    model = genai.GenerativeModel('gemini-1.5-flash')
+                    # Otomatik model seçimi
+                    active_model = get_best_model()
+                    model = genai.GenerativeModel(active_model)
                     response = model.generate_content(["Bu belgedeki isimleri ve tarihleri oku:", image])
                     text = response.text
             else:
@@ -1132,8 +1153,12 @@ def render_property_genealogy(api_key):
                     full_text += f"\nDOC: {f.name}\n" + get_genealogy_file_text(f, api_key)
                 
                 try:
-                    status_box.info("AI Zinciri kuruyor...")
-                    model = genai.GenerativeModel('gemini-1.5-flash')
+                    status_box.info("AI Modeli seçiliyor ve zincir kuruluyor...")
+                    
+                    # OTOMATİK MODEL SEÇİMİ
+                    active_model_name = get_best_model()
+                    model = genai.GenerativeModel(active_model_name)
+                    
                     prompt = f"""
                     GÖREV: Metinlerdeki mülkiyet devirlerini JSON listesi yap.
                     METİN: {full_text[:40000]}
@@ -1143,7 +1168,7 @@ def render_property_genealogy(api_key):
                     response = model.generate_content(prompt)
                     clean_json = response.text.replace("```json", "").replace("```", "").strip()
                     st.session_state.prop_history = json.loads(clean_json)
-                    status_box.success("Tamamlandı!")
+                    status_box.success(f"Tamamlandı! (Kullanılan Model: {active_model_name})")
                     time.sleep(1)
                     st.rerun()
                 except Exception as e:
@@ -1176,14 +1201,17 @@ def render_property_genealogy(api_key):
             
             st.divider()
             
-            # --- DÜZELTİLEN KISIM (STREAMING / CANLI YAZMA) ---
+            # --- ANALİZ KISMI (STREAMING & AUTO MODEL) ---
             if st.button("🕵️ Risk Analizi Başlat"):
-                output_placeholder = st.empty() # Boş bir kutu oluştur
-                output_placeholder.text("Analiz başlıyor...")
+                output_placeholder = st.empty()
+                output_placeholder.text("Model aranıyor ve analiz başlıyor...")
                 
                 try:
                     genai.configure(api_key=api_key)
-                    model = genai.GenerativeModel('gemini-1.5-flash')
+                    
+                    # OTOMATİK MODEL SEÇİMİ
+                    active_model_name = get_best_model()
+                    model = genai.GenerativeModel(active_model_name)
                     
                     chain_data = json.dumps(st.session_state.prop_history, ensure_ascii=False)
                     
@@ -1203,20 +1231,14 @@ def render_property_genealogy(api_key):
                     full_text = ""
                     for chunk in response:
                         full_text += chunk.text
-                        # Her kelimede ekrandaki kutuyu güncelle
                         output_placeholder.markdown(full_text + "▌") 
                     
-                    # İmleci kaldır ve son hali göster
                     output_placeholder.markdown(full_text)
                         
                 except Exception as e:
                     output_placeholder.error(f"Hata oluştu: {e}")
         else:
             st.info("👈 Veri yok.")
-
-
-
-
 
 
 
