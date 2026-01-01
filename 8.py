@@ -1743,7 +1743,7 @@ def main():
     with tab_soy: render_property_genealogy(api_key)
     with tab_isx: render_limitations_heatmap(api_key)
     with tab_golx: render_conflict_scanner(api_key)
-    with tab_golx: render_mediation_checker(api_key)
+    with tab_arx: render_mediation_checker(api_key)
     # --- TAB İÇERİKLERİ ---
 
     with tab1:
