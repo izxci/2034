@@ -1,10 +1,9 @@
-import pandas as pd  # <--- BU SATIRI EN BAŞA EKLEYİN
+import streamlit as st
+import pandas as pd  # Pandas hatasını çözer
 import requests
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup # Web tarama hatasını çözer
 import io
 import PyPDF2
-import streamlit as st
-import time
 import zipfile
 import xml.etree.ElementTree as ET
 import re
@@ -20,15 +19,13 @@ import speech_recognition as sr
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import json
-import pandas as pd
 import os
 from PIL import Image
 import time
-import pandas as pd
 from datetime import datetime, timedelta, date
 import shutil
-import json
 import difflib
+import plotly.graph_objects as go # Görsel grafikler için gerekli
 
 # --- Sayfa Ayarları ---
 st.set_page_config(
@@ -346,6 +343,111 @@ def get_ai_response(prompt, api_key):
     except: pass
     return "Hata: AI yanıt veremedi."
 
+# ==========================================
+# YENİ EKLENEN MODÜLLER (CHECK-UP & ZAMAN MAKİNESİ)
+# ==========================================
+
+def get_gemini_text_response(prompt, api_key):
+    """Metin tabanlı sorgular için güvenli Gemini çağrısı."""
+    if not api_key: return "Lütfen API Anahtarınızı giriniz."
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"AI Hatası: {str(e)}"
+
+def render_checkup_module(api_key):
+    st.info("Şirket sözleşmelerini veya İK belgelerini yükleyin. Yapay zeka, güncel Yargıtay kararlarına göre 'Görünmez Riskleri' tespit edip puanlasın.")
+    col1, col2 = st.columns([1, 2])
+
+    with col1:
+        st.markdown("#### 📂 Belge Yükleme")
+        doc_type = st.selectbox("Belge Türü", ["İş Sözleşmesi", "KVKK Aydınlatma Metni", "Tedarikçi Sözleşmesi", "Kira Kontratı"])
+        uploaded_file = st.file_uploader("Dosyayı Sürükleyin (PDF/DOCX)", type=["pdf", "docx", "txt"])
+        analyze_btn = st.button("🔍 Risk Taramasını Başlat", type="primary", use_container_width=True)
+
+    with col2:
+        if analyze_btn and uploaded_file:
+            if not api_key:
+                st.error("⚠️ Lütfen sol menüden API Anahtarını giriniz.")
+            else:
+                with st.spinner("Belge taranıyor, Yargıtay kararlarıyla karşılaştırılıyor..."):
+                    # Dosya okuma (Basit)
+                    file_text = "Örnek metin"
+                    try:
+                        if uploaded_file.name.endswith(".pdf"):
+                            reader = PyPDF2.PdfReader(uploaded_file)
+                            file_text = reader.pages[0].extract_text()
+                        elif uploaded_file.name.endswith(".txt"):
+                            file_text = uploaded_file.getvalue().decode("utf-8")
+                    except: pass
+
+                    # AI Prompt
+                    prompt = f"""
+                    GÖREV: Sen kıdemli bir hukuk denetçisisin.
+                    BELGE TÜRÜ: {doc_type}
+                    BELGE İÇERİĞİ (ÖZET): {file_text[:3000]}
+                    
+                    GÖREVLER:
+                    1. Bu belge için güncel Yargıtay kararlarına göre en kritik 3 riski bul.
+                    2. Belgeye 0-100 arası "HUKUKİ SAĞLAMLIK SKORU" ver.
+                    
+                    ÇIKTI FORMATI:
+                    SKOR: [Sayı]
+                    RİSKLER: [Detaylar]
+                    """
+                    ai_response = get_gemini_text_response(prompt, api_key)
+                    
+                    # Skoru çekme
+                    risk_score = 60
+                    match = re.search(r"SKOR:\s*(\d+)", ai_response)
+                    if match: risk_score = int(match.group(1))
+
+                    # Hız Göstergesi (Gauge)
+                    fig = go.Figure(go.Indicator(
+                        mode = "gauge+number",
+                        value = risk_score,
+                        title = {'text': "Hukuki Sağlamlık Skoru"},
+                        gauge = {
+                            'axis': {'range': [None, 100]},
+                            'bar': {'color': "black"},
+                            'steps': [
+                                {'range': [0, 50], 'color': "#ff4d4d"},
+                                {'range': [50, 80], 'color': "#ffcc00"},
+                                {'range': [80, 100], 'color': "#33cc33"}
+                            ],
+                            'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': risk_score}
+                        }
+                    ))
+                    fig.update_layout(height=250, margin=dict(l=20, r=20, t=30, b=20))
+                    st.plotly_chart(fig, use_container_width=True)
+                    st.markdown("### 📋 Risk Raporu")
+                    st.write(ai_response.replace(f"SKOR: {risk_score}", ""))
+
+def render_time_machine(api_key):
+    st.info("Bir olay tarihi girin, sistem sizi o güne götürsün. O gün geçerli olan kanun maddesini ve faiz oranlarını görün.")
+    col_date, col_topic = st.columns([1, 2])
+    
+    with col_date:
+        target_date = st.date_input("Olay Tarihi Seçin:", value=date(2015, 5, 14))
+    with col_topic:
+        topic = st.text_input("Sorgulanacak Konu", placeholder="Örn: Kıdem Tazminatı Tavanı")
+
+    if st.button("🕒 Geçmişe Git", use_container_width=True):
+        if api_key and topic:
+            with st.spinner(f"Sistem {target_date.strftime('%d.%m.%Y')} tarihine geri sarılıyor..."):
+                prompt = f"""
+                GÖREV: Hukuk Tarihçisi. TARİH: {target_date.strftime('%d.%m.%Y')}. KONU: {topic}.
+                SORU: O tarihte bu konuyla ilgili yürürlükte olan kanun maddesi, faiz oranı ve Yargıtay görüşü neydi?
+                """
+                response = get_gemini_text_response(prompt, api_key)
+                st.markdown(f"### 📅 Tarih: {target_date.strftime('%d %B %Y')}")
+                st.info(response)
+                st.image("https://img.freepik.com/free-vector/sepia-vintage-paper-texture_53876-88607.jpg?w=1380", caption="Arşiv Kaydı", width=600)
+
+
 # --- ANA UYGULAMA ---
 def main():
     st.title("⚖️ Hukuk Asistanı (v10.0 - Ultimate Edition)")
@@ -381,9 +483,8 @@ def main():
     if "aktif_dosya_adi" not in st.session_state: st.session_state.aktif_dosya_adi = ""
     if "aktif_dosya_yolu" not in st.session_state: st.session_state.aktif_dosya_yolu = ""
     
-    if "faiz_sonuc" not in st.session_state: st.session_state.faiz_sonuc = ""
     if "sozlesme_analiz" not in st.session_state: st.session_state.sozlesme_analiz = ""
-    if "muvekkil_mesaj" not in st.session_state: st.session_state.muvekkil_mesaj = ""
+
     
     # Yeni Eklenen State'ler
     if "mock_messages" not in st.session_state: st.session_state.mock_messages = []
@@ -447,7 +548,22 @@ def main():
         "🕵️‍♂️ KVKK Temizle",  "⚔️ Belge Kıyasla", "🎭 Sanal Duruşma", "✅ Görev Çıkarıcı", "⚡ Canlı Asistan", "📡 Etki Analizi", "🕵️ Dijital Otp"
     ])
 
+    # 3. SATIR: Simülasyon ve İleri Düzey Risk (YENİ EKLENDİ)
+    st.markdown("### 🔮 Simülasyon & Risk Analizi")
+    tab_checkup, tab_timemachine = st.tabs(["🏥 Kurumsal Check-up", "⏳ Zaman Makinesi"])
 
+    # --- SEKMELERİN İÇERİKLERİ ---
+    
+    # NOT: tab1, tab2 vb. eski içeriklerinizi buraya yerleştirmelisiniz.
+    # Örnek olarak yeni eklenenleri bağlıyorum:
+    
+    with tab_checkup:
+        render_checkup_module(api_key)
+        
+    with tab_timemachine:
+        render_time_machine(api_key)
+
+    # (Buradan sonra eski kodunuzdaki 'with tab1:', 'with tab2:' blokları gelmeli...)
 
 
 
