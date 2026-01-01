@@ -1893,6 +1893,108 @@ def render_temporal_law_machine(api_key):
             """)
 
 
+def render_expert_report_auditor(api_key):
+    st.info("🧐 **Bilirkişi Raporu Denetçisi:** Karmaşık raporları tarar. Matematiksel hataları (kusur toplamı != 100), mantıksal çelişkileri ve eksik incelemeleri tespit ederek 'İtiraz Dilekçesi' taslağı hazırlar.")
+
+    # --- 0. KÜTÜPHANE KONTROLÜ ---
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        st.error("Bu modül için 'pypdf' kütüphanesi gereklidir. Lütfen requirements.txt dosyasına ekleyin.")
+        return
+
+    # --- 1. GİRDİ PANELİ ---
+    col_upload, col_analysis = st.columns([1, 1])
+
+    report_text = ""
+
+    with col_upload:
+        st.markdown("### 📄 Raporu Yükle")
+        uploaded_file = st.file_uploader("Bilirkişi Raporu (PDF)", type=["pdf"])
+        
+        st.markdown("--- VEYA ---")
+        text_input = st.text_area("Metni Buraya Yapıştır", height=150, placeholder="Rapor içeriğini buraya kopyalayabilirsiniz...")
+
+        # Metin Çıkarma İşlemi
+        if uploaded_file:
+            try:
+                reader = PdfReader(uploaded_file)
+                for page in reader.pages:
+                    report_text += page.extract_text() + "\n"
+                st.success(f"✅ PDF Okundu: {len(reader.pages)} sayfa")
+            except Exception as e:
+                st.error(f"PDF Okuma Hatası: {e}")
+        elif text_input:
+            report_text = text_input
+
+    # --- 2. ANALİZ MOTORU ---
+    with col_analysis:
+        st.markdown("### 🔍 Denetim Sonucu")
+        
+        analyze_btn = st.button("🛡️ Raporu Denetle ve Hata Bul", type="primary")
+        
+        if analyze_btn:
+            if not report_text:
+                st.warning("Lütfen analiz edilecek bir rapor yükleyin veya metin girin.")
+            elif len(report_text) < 50:
+                st.warning("Girilen metin analiz için çok kısa.")
+            elif not api_key:
+                st.error("API Key gerekli.")
+            else:
+                output_box = st.empty()
+                output_box.info("Rapor taranıyor: Kusur oranları toplanıyor, çelişkiler aranıyor...")
+                
+                try:
+                    import google.generativeai as genai
+                    genai.configure(api_key=api_key)
+                    
+                    # Model Seçimi
+                    model_name = "models/gemini-pro"
+                    for m in genai.list_models():
+                        if 'flash' in m.name: model_name = m.name; break
+                    
+                    model = genai.GenerativeModel(model_name)
+                    
+                    prompt = f"""
+                    GÖREV: Sen titiz bir 'Bilirkişi Raporu Denetçisi' ve Yargıtay İçtihatları uzmanısın.
+                    Aşağıdaki bilirkişi raporu metnini analiz et ve hataları bul.
+                    
+                    METİN:
+                    {report_text[:10000]} (Metin kısaltıldıysa devamını dikkate al)
+                    
+                    İSTENEN ANALİZ (Markdown Formatında):
+                    
+                    ### 1. 🧮 Matematiksel ve Mantıksal Tutarlılık
+                    - Kusur oranları toplamı 100 ediyor mu? (Kontrol et: %25 + %75 vb.)
+                    - Hesaplamalarda bariz bir çarpım/toplam hatası var mı?
+                    - Tarihler tutarlı mı? (Kaza tarihinden sonraki bir mevzuat uygulanmış mı?)
+                    
+                    ### 2. ⚖️ Hukuki ve Teknik Dayanak
+                    - Rapor hangi teknik veriye dayanıyor? (Tramer, MOBESE, Tanık, Takograf vb.)
+                    - Bilirkişi "Hukuki niteleme" yapmış mı? (UYARI: Bilirkişi hukuki yorum yapamaz, sadece teknik tespit yapar. Hakim yerine geçip hüküm kurduysa bunu belirt.)
+                    
+                    ### 3. 🚩 Tespit Edilen Çelişkiler
+                    - "Tanık ifadesinde X denmesine rağmen, raporda Y kabul edilmiştir" gibi çelişkiler var mı?
+                    
+                    ### 4. 📝 İtiraz Stratejisi (HMK m. 281)
+                    - Bu rapora itiraz etmek için kullanılabilecek 3 güçlü argüman yaz.
+                    - "Ek Rapor" veya "Yeni Bilirkişi Heyeti" talep etmek için gerekçe oluştur.
+                    """
+                    
+                    response = model.generate_content(prompt, stream=True)
+                    
+                    full_text = ""
+                    for chunk in response:
+                        full_text += chunk.text
+                        output_box.markdown(full_text + "▌")
+                    output_box.markdown(full_text)
+                    
+                except Exception as e:
+                    output_box.error(f"Analiz Hatası: {e}")
+
+         
+
+
 
 # --- ANA UYGULAMA ---
 def main():
@@ -2000,8 +2102,8 @@ def main():
 
     # 4. SATIR: oyun değiştirici hamle menüsü (15 Sekme)
     st.markdown("### 🛠️ Temel Araçlar & Strateji")
-    tabx1, tabx2 = st.tabs([
-        "🗺️ Adli Harita", "🕰️ Mevzuat Makinesi" 
+    tabx1, tabx2, tabx3 = st.tabs([
+        "🗺️ Adli Harita", "🕰️ Mevzuat Makinesi", "🧐 Rapor Denetçisi" 
     ])
 
 
@@ -2035,6 +2137,7 @@ def main():
     with tab_arx: render_mediation_checker(api_key)
     with tabx1: render_forensic_map(api_key)
     with tabx2: render_temporal_law_machine(api_key)
+    with tabx3: render_expert_report_auditor(api_key)
     # --- TAB İÇERİKLERİ ---
 
     with tab1:
