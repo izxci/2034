@@ -839,7 +839,7 @@ def render_osint_module(api_key):
                         st.write(response.text)
 
 def render_precedent_alert_module(api_key):
-    st.info("Bu modül, derdest (devam eden) davalarınızı takip eder ve Yargıtay/AYM tarafından yayınlanan **'Bugünkü Kararlar'** ile otomatik eşleştirir. Sizi etkileyen bir karar çıktığında alarm verir.")
+    st.info("Bu modül, derdest (devam eden) davalarınızı takip eder ve Yargıtay/AYM tarafından yayınlanan **'Bugünkü Kararlar'** ile otomatik eşleştirir.")
 
     # --- 1. OTURUM DURUMU (Dava Portföyü) ---
     if 'my_cases' not in st.session_state:
@@ -855,7 +855,6 @@ def render_precedent_alert_module(api_key):
     with col_portfolio:
         st.markdown("### 📂 Dava Portföyüm")
         
-        # Yeni Dava Ekleme Alanı
         with st.expander("➕ Yeni Dava Ekle"):
             new_case_name = st.text_input("Dava Adı")
             new_case_topic = st.text_area("Dava Konusu/Detayı")
@@ -865,14 +864,8 @@ def render_precedent_alert_module(api_key):
                 st.success("Eklendi!")
                 st.rerun()
         
-        # Mevcut Davaları Listele
         for case in st.session_state.my_cases:
-            st.markdown(f"""
-            **Dosya #{case['id']}: {case['ad']}**  
-            *{case['konu']}*  
-            `Durum: {case['durum']}`
-            ---
-            """)
+            st.markdown(f"**Dosya #{case['id']}: {case['ad']}**\n*{case['konu']}*\n`Durum: {case['durum']}`\n---")
 
     # --- SAĞ KOLON: GÜNLÜK BÜLTEN TARAMASI ---
     with col_feed:
@@ -882,7 +875,6 @@ def render_precedent_alert_module(api_key):
             if not api_key:
                 st.error("API Anahtarı gerekli.")
             else:
-                # SİMÜLASYON: Sanki Yargıtay/AYM sitesinden bu sabah düşen kararlar çekilmiş gibi
                 daily_decisions = [
                     """KARAR 2024/105 (Yargıtay HGK): Kira tespit davalarında '5 yıllık süre' dolmadan yapılan uyarlamalarda, TÜFE oranı tavan olarak kabul edilemez. Hakim hakkaniyete göre serbestçe belirler.""",
                     """KARAR 2024/88 (AYM Bireysel Başvuru): Kripto para borsalarındaki kayıplarda, devletin denetim yükümlülüğünü ihlal ettiği iddiasıyla yapılan başvuruda 'Mülkiyet Hakkı İhlali' olmadığına karar verildi.""",
@@ -891,57 +883,61 @@ def render_precedent_alert_module(api_key):
                 
                 st.write(f"📅 **Bugün Yayınlanan Kritik Karar Sayısı:** {len(daily_decisions)}")
                 
-                with st.spinner("Yapay Zeka, yeni kararları davalarınızla çapraz sorguluyor..."):
+                with st.spinner("Uygun yapay zeka modeli aranıyor ve analiz yapılıyor..."):
                     genai.configure(api_key=api_key)
                     
-                    # --- DÜZELTME: Sadece 'gemini-pro' kullanıyoruz ---
-                    # Bu model en kararlı olanıdır ve hata vermez.
-                    model = genai.GenerativeModel('gemini-pro')
-                    
-                    # Tüm davaları ve yeni kararları tek bir promptta birleştiriyoruz
-                    cases_str = str(st.session_state.my_cases)
-                    decisions_str = "\n".join(daily_decisions)
-                    
-                    prompt = f"""
-                    GÖREV: Sen proaktif bir hukuk asistanısın.
-                    
-                    1. AŞAĞIDAKİ MÜVEKKİL DAVALARI (PORTFÖY):
-                    {cases_str}
-                    
-                    2. AŞAĞIDAKİ BUGÜN ÇIKAN YENİ YARGI KARARLARI:
-                    {decisions_str}
-                    
-                    YAPMAN GEREKEN:
-                    Her bir davayı kontrol et. Eğer yeni kararlardan biri, mevcut bir davayı OLUMLU veya OLUMSUZ etkiliyorsa uyar.
-                    
-                    ÇIKTI FORMATI (Sadece etkilenenleri yaz):
-                    UYARI: [Dosya Adı]
-                    DURUM: [KRİTİK / DİKKAT / FIRSAT]
-                    NEDEN: [Yeni kararın etkisi ne?]
-                    AKSİYON: [Avukat hemen ne yapmalı? Örn: Ek beyan sun, davayı ıslah et]
-                    """
+                    # --- OTOMATİK MODEL SEÇİCİ (HATA ÇÖZÜMÜ) ---
+                    target_model_name = "models/gemini-pro" # Varsayılan
+                    try:
+                        # Sistemdeki mevcut modelleri listele ve ilk çalışanı seç
+                        for m in genai.list_models():
+                            if 'generateContent' in m.supported_generation_methods:
+                                if 'gemini' in m.name:
+                                    target_model_name = m.name
+                                    break
+                    except Exception as e:
+                        st.warning(f"Model listesi alınamadı, varsayılan deneniyor: {e}")
+
+                    # Seçilen modeli ekrana yaz (Debug için)
+                    # st.caption(f"Kullanılan Model: {target_model_name}") 
                     
                     try:
+                        model = genai.GenerativeModel(target_model_name)
+                        
+                        cases_str = str(st.session_state.my_cases)
+                        decisions_str = "\n".join(daily_decisions)
+                        
+                        prompt = f"""
+                        GÖREV: Sen proaktif bir hukuk asistanısın.
+                        1. AŞAĞIDAKİ MÜVEKKİL DAVALARI (PORTFÖY): {cases_str}
+                        2. AŞAĞIDAKİ BUGÜN ÇIKAN YENİ YARGI KARARLARI: {decisions_str}
+                        YAPMAN GEREKEN: Her bir davayı kontrol et. Eğer yeni kararlardan biri, mevcut bir davayı etkiliyorsa uyar.
+                        ÇIKTI FORMATI:
+                        UYARI: [Dosya Adı]
+                        DURUM: [KRİTİK / DİKKAT / FIRSAT]
+                        NEDEN: [Açıklama]
+                        AKSİYON: [Öneri]
+                        """
+                        
                         response = model.generate_content(prompt)
                         
-                        # Sonuçları Ayrıştır ve Göster
                         st.divider()
                         st.markdown("### 🚨 Tespit Edilen Riskler ve Fırsatlar")
                         
-                        # AI Cevabını daha şık göstermek için
                         alerts = response.text.split("UYARI:")
-                        for alert in alerts:
-                            if alert.strip():
-                                # Renklendirme mantığı
-                                if "KRİTİK" in alert:
-                                    st.error(f"**UYARI:{alert}**")
-                                elif "FIRSAT" in alert:
-                                    st.success(f"**UYARI:{alert}**")
-                                else:
-                                    st.warning(f"**UYARI:{alert}**")
+                        if len(alerts) < 2:
+                            st.write(response.text)
+                        else:
+                            for alert in alerts:
+                                if alert.strip():
+                                    if "KRİTİK" in alert: st.error(f"**UYARI:{alert}**")
+                                    elif "FIRSAT" in alert: st.success(f"**UYARI:{alert}**")
+                                    else: st.warning(f"**UYARI:{alert}**")
                                     
                     except Exception as e:
-                        st.error(f"Bir hata oluştu: {str(e)}")
+                        st.error(f"Model Hatası: {str(e)}")
+                        st.info("Lütfen API anahtarınızın 'Generative AI' servisine erişimi olduğundan emin olun.")
+
 
 
 
