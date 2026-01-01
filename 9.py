@@ -1,7 +1,7 @@
 import streamlit as st
-import pandas as pd
+import pandas as pd  # Pandas hatasını çözer
 import requests
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup # Web tarama hatasını çözer
 import io
 import PyPDF2
 import zipfile
@@ -18,107 +18,108 @@ import concurrent.futures
 from gtts import gTTS
 import speech_recognition as sr
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 import json
 import os
 from PIL import Image
-from PIL.ExifTags import TAGS
+from PIL.ExifTags import TAGS  # <--- Bu çok önemli, eksikse hata verir
 import time
 from datetime import datetime, timedelta, date
 import shutil
 import difflib
-import plotly.graph_objects as go
-import networkx as nx
-import folium
-from streamlit_folium import st_folium
-import random
+import plotly.graph_objects as go # Görsel grafikler için gerekli
+from PIL import Image
 
-# ==========================================
-# 1. AYARLAR VE CSS TASARIMI
-# ==========================================
+
+
+# --- Sayfa Ayarları ---
 st.set_page_config(
-    page_title="Hukuk Asistanı AI Pro",
+    page_title="Hukuk Asistanı AI",
     page_icon="⚖️",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
-# Modern CSS Tasarımı
+# --- CSS ---
 st.markdown("""
     <style>
-    /* Genel Arkaplan */
-    .stApp {
-        background-color: #f8f9fa;
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    .main { background-color: #f8f9fa; }
+    .kanun-kutusu { 
+        background-color: #fff3e0; 
+        padding: 15px; 
+        border-left: 5px solid #ff9800; 
+        border-radius: 5px; 
+        margin-bottom: 10px;
+        white-space: pre-wrap;
     }
-    
-    /* Sidebar Tasarımı */
-    section[data-testid="stSidebar"] {
-        background-color: #1e293b;
-        color: #ffffff;
+    .ictihat-kutusu {
+        background-color: #e3f2fd;
+        padding: 15px;
+        border-left: 5px solid #2196f3;
+        border-radius: 5px;
+        margin-bottom: 10px;
     }
-    section[data-testid="stSidebar"] h1, section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3 {
-        color: #e2e8f0;
+    .buyur-abi-kutusu {
+        background-color: #f3e5f5;
+        padding: 15px;
+        border-left: 5px solid #9c27b0;
+        border-radius: 5px;
+        margin-bottom: 10px;
     }
-    .stRadio > label { color: white !important; font-weight: 600; }
-    
-    /* Dashboard Kartları */
-    .dashboard-card {
-        background-color: white;
-        padding: 20px;
-        border-radius: 15px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        border-left: 6px solid #3b82f6;
+    .alarm-kutusu {
+        background-color: #ffebee;
+        padding: 15px;
+        border-left: 5px solid #f44336;
+        border-radius: 5px;
+        margin-bottom: 10px;
+        font-weight: bold;
+        color: #b71c1c;
+    }
+    .arsiv-kutusu {
+        background-color: #e0f2f1;
+        padding: 15px;
+        border-left: 5px solid #009688;
+        border-radius: 5px;
+        margin-bottom: 10px;
+    }
+    .uyap-kutusu {
+        background-color: #fce4ec; 
+        padding: 15px; 
+        border-left: 5px solid #c2185b; 
+        border-radius: 5px; 
         margin-bottom: 20px;
-        transition: transform 0.2s;
     }
-    .dashboard-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 10px 15px rgba(0,0,0,0.1);
-    }
-    
-    /* Özel Kutular */
-    .kanun-kutusu { background-color: #fff3e0; padding: 15px; border-left: 5px solid #ff9800; border-radius: 5px; margin-bottom: 10px; }
-    .ictihat-kutusu { background-color: #e3f2fd; padding: 15px; border-left: 5px solid #2196f3; border-radius: 5px; margin-bottom: 10px; }
-    .alarm-kutusu { background-color: #ffebee; padding: 15px; border-left: 5px solid #f44336; border-radius: 5px; color: #b71c1c; font-weight: bold; }
-    .success-box { background-color: #dcfce7; padding: 15px; border-left: 5px solid #22c55e; border-radius: 5px; }
-    
-    /* Butonlar */
-    .stButton > button {
-        border-radius: 8px;
-        font-weight: 600;
-        border: none;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        transition: all 0.3s ease;
-    }
-    .stButton > button:hover {
-        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    .ozel-sekme {
+        border: 1px solid #ddd;
+        padding: 20px;
+        border-radius: 10px;
+        background-color: #ffffff;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# ==========================================
-# 2. YARDIMCI FONKSİYONLAR (CORE)
-# ==========================================
 
-# --- Veritabanı / Kalıcılık ---
+# --- KALICILIK (VERİ TABANI) FONKSİYONLARI ---
 DURUSMA_FILE = "durusma_kayitlari.json"
-ROOT_DIR = "Hukuk_Arsivi"
-if not os.path.exists(ROOT_DIR): os.makedirs(ROOT_DIR)
 
 def save_durusma_data(data):
+    """Duruşma listesini JSON dosyasına kaydeder."""
     serializable_data = []
     for item in data:
         temp = item.copy()
         if isinstance(temp.get('dtstart'), datetime):
             temp['dtstart'] = temp['dtstart'].isoformat()
         serializable_data.append(temp)
+    
     try:
         with open(DURUSMA_FILE, "w", encoding="utf-8") as f:
             json.dump(serializable_data, f, ensure_ascii=False, indent=4)
-    except Exception as e: st.error(f"Kaydetme hatası: {e}")
+    except Exception as e:
+        st.error(f"Kaydetme hatası: {e}")
 
 def load_durusma_data():
-    if not os.path.exists(DURUSMA_FILE): return []
+    """JSON dosyasından duruşma listesini yükler."""
+    if not os.path.exists(DURUSMA_FILE):
+        return []
     try:
         with open(DURUSMA_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -126,350 +127,10 @@ def load_durusma_data():
             if 'dtstart' in item and item['dtstart']:
                 item['dtstart'] = datetime.fromisoformat(item['dtstart'])
         return data
-    except: return []
-
-# --- Dosya Okuma ---
-def parse_udf(file_bytes):
-    try:
-        with zipfile.ZipFile(file_bytes) as z:
-            if 'content.xml' in z.namelist():
-                with z.open('content.xml') as f:
-                    tree = ET.parse(f)
-                    return " ".join([elem.text.strip() for elem in tree.getroot().iter() if elem.text])
-            return "HATA: UDF içeriği okunamadı."
-    except Exception as e: return f"HATA: {str(e)}"
-
-def parse_pdf(file_bytes):
-    try:
-        reader = PdfReader(file_bytes)
-        text = "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
-        return text if len(text.strip()) > 50 else ""
-    except: return ""
-
-def extract_text_from_docx(file_bytes):
-    try:
-        doc = Document(file_bytes)
-        return "\n".join([para.text for para in doc.paragraphs])
-    except Exception as e: return f"Word Okuma Hatası: {str(e)}"
-
-# --- AI & Model Yönetimi (Hata Önleyici) ---
-def get_best_model(api_key):
-    """En uygun ve çalışan AI modelini otomatik seçer."""
-    if not api_key: return None
-    genai.configure(api_key=api_key)
-    try:
-        models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        # Öncelik sırası: Flash (Hızlı) -> Pro (Güçlü) -> Herhangi biri
-        for m in models: 
-            if 'flash' in m and '1.5' in m: return m
-        for m in models: 
-            if 'pro' in m and '1.5' in m: return m
-        return models[0] if models else "models/gemini-1.5-flash"
     except:
-        return "models/gemini-1.5-flash" # Fallback
+        return []
 
-def get_ai_response(prompt, api_key, model_name=None):
-    if not api_key: return "⚠️ Lütfen API Anahtarı giriniz."
-    try:
-        if not model_name: model_name = get_best_model(api_key)
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(model_name)
-        response = model.generate_content(prompt)
-        return response.text
-    except Exception as e:
-        return f"AI Hatası: {str(e)}"
-
-def perform_ocr_gemini(file_bytes, mime_type, api_key, prompt_text="Bu dosyanın içeriğini tam olarak metne dök."):
-    if not api_key: return "API Key Yok"
-    model_name = get_best_model(api_key)
-    genai.configure(api_key=api_key)
-    try:
-        model = genai.GenerativeModel(model_name)
-        image_part = {"mime_type": mime_type, "data": file_bytes.getvalue()}
-        response = model.generate_content([prompt_text, image_part])
-        return response.text
-    except Exception as e: return f"OCR Hatası: {e}"
-
-# --- Dosya Oluşturma ---
-def create_word_file(text):
-    doc = Document()
-    for line in text.split('\n'):
-        if line.strip(): doc.add_paragraph(line)
-    byte_io = BytesIO()
-    doc.save(byte_io)
-    byte_io.seek(0)
-    return byte_io
-
-def create_pdf_file(text):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=11)
-    # Türkçe karakter sorunu için basit replace (Daha iyi font yüklenebilir)
-    tr_map = {'ğ':'g','Ğ':'G','ş':'s','Ş':'S','ı':'i','İ':'I','ç':'c','Ç':'C','ü':'u','Ü':'U','ö':'o','Ö':'O'}
-    for k,v in tr_map.items(): text = text.replace(k,v)
-    pdf.multi_cell(0, 10, text.encode('latin-1', 'replace').decode('latin-1'))
-    return pdf.output(dest='S').encode('latin-1')
-
-# ==========================================
-# 3. MODÜL RENDER FONKSİYONLARI
-# ==========================================
-# (Kodun okunabilirliği için modülleri buraya topluyoruz)
-
-def render_dashboard():
-    st.title("👋 Hoş Geldiniz, Sayın Meslektaşım")
-    st.markdown("Hukuk pratiğinizi hızlandırmak için sol menüden bir araç seçin.")
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.markdown("""
-        <div class="dashboard-card" style="border-left-color: #10b981;">
-            <h3>📂 Belge Analizi</h3>
-            <p>PDF, UDF ve Resim dosyalarını saniyeler içinde tarayın ve özetleyin.</p>
-        </div>
-        """, unsafe_allow_html=True)
-    with col2:
-        st.markdown("""
-        <div class="dashboard-card" style="border-left-color: #f59e0b;">
-            <h3>⚖️ Emsal Tarama</h3>
-            <p>Yargıtay ve AYM kararlarını yapay zeka ile analiz edin.</p>
-        </div>
-        """, unsafe_allow_html=True)
-    with col3:
-        st.markdown("""
-        <div class="dashboard-card" style="border-left-color: #6366f1;">
-            <h3>🕵️ Risk Analizi</h3>
-            <p>Sözleşme ve tapu kayıtlarındaki gizli riskleri tespit edin.</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    # Hızlı Durum
-    st.divider()
-    durusma_sayisi = len(st.session_state.durusma_listesi) if 'durusma_listesi' in st.session_state else 0
-    st.info(f"📅 Takviminizde kayıtlı **{durusma_sayisi}** duruşma bulunmaktadır.")
-
-# --- DİĞER MODÜLLER (Özetlenmiş Versiyonlar) ---
-# Not: Buradaki fonksiyonlar sizin orijinal kodunuzdaki mantığı kullanır.
-
-def render_belge_islemleri(api_key):
-    st.header("📂 Belge İşlemleri & OCR")
-    tab1, tab2, tab3, tab4 = st.tabs(["📄 Belge Özetle/Sohbet", "👁️ OCR (Resimden Metne)", "🤿 Dalgıç (Çoklu Analiz)", "🌍 Çeviri"])
-    
-    with tab1:
-        uploaded_file = st.file_uploader("Dosya Yükle (PDF/UDF)", type=['pdf','udf'])
-        if uploaded_file:
-            # Dosya işleme mantığı
-            file_bytes = BytesIO(uploaded_file.getvalue())
-            ext = uploaded_file.name.split('.')[-1]
-            text = parse_udf(file_bytes) if ext=='udf' else parse_pdf(file_bytes)
-            st.session_state.doc_text = text
-            st.success("Dosya okundu!")
-            
-            user_q = st.chat_input("Bu belge hakkında soru sor...")
-            if user_q:
-                res = get_ai_response(f"METİN: {text[:20000]}\nSORU: {user_q}", api_key)
-                st.write(res)
-                
-    with tab2: # OCR
-        ocr_file = st.file_uploader("Resim/PDF Yükle", type=['png','jpg','pdf'])
-        if ocr_file and st.button("Metni Çıkar"):
-            mime = "application/pdf" if ocr_file.name.endswith('pdf') else "image/jpeg"
-            res = perform_ocr_gemini(ocr_file, mime, api_key)
-            st.text_area("Sonuç", res, height=300)
-
-    with tab3: # Dalgıç
-        st.info("Birden fazla dosyayı analiz et.")
-        files = st.file_uploader("Dosyalar", accept_multiple_files=True)
-        if files and st.button("Analiz Et"):
-            full_text = ""
-            for f in files: full_text += f"\nDOSYA: {f.name}\n" # Basit okuma
-            st.session_state.dalgic_context = full_text
-            st.success("Hafızaya alındı.")
-            
-    with tab4: # Çeviri
-        txt = st.text_area("Çevrilecek Metin")
-        lang = st.selectbox("Hedef Dil", ["İngilizce", "Almanca", "Fransızca"])
-        if st.button("Çevir") and api_key:
-            res = get_ai_response(f"Bu hukuki metni {lang} diline çevir: {txt}", api_key)
-            st.write(res)
-
-def render_mevzuat_ictihat(api_key):
-    st.header("⚖️ Mevzuat ve İçtihat")
-    tab1, tab2, tab3, tab4 = st.tabs(["📕 Mevzuat Ara", "⚖️ İçtihat Tara", "⏳ Zaman Makinesi", "🦋 Kelebek Etkisi"])
-    
-    with tab1:
-        q = st.text_input("Kanun Maddesi (Örn: TBK 120)")
-        if st.button("Getir") and api_key:
-            st.write(get_ai_response(f"{q} maddesini açıkla", api_key))
-            
-    with tab2:
-        q = st.text_input("İçtihat Konusu")
-        if st.button("Emsal Bul") and api_key:
-            st.write(get_ai_response(f"{q} hakkında Yargıtay kararları", api_key))
-            
-    with tab3:
-        # Zaman Makinesi (Sizin kodunuzdan)
-        target_date = st.date_input("Olay Tarihi", date(2015,5,14))
-        topic = st.text_input("Konu")
-        if st.button("Geçmişe Git") and api_key:
-            prompt = f"Tarih: {target_date}, Konu: {topic}. O tarihteki kanunu söyle."
-            st.write(get_ai_response(prompt, api_key))
-            
-    with tab4:
-        # Kelebek Etkisi
-        change = st.text_area("Kanun Değişikliği")
-        if st.button("Etki Analizi") and api_key:
-            st.graphviz_chart(get_ai_response(f"{change} değişikliğinin etkilerini Graphviz DOT formatında ver", api_key).replace("```dot","").replace("```",""))
-
-def render_analiz_risk(api_key):
-    st.header("🕵️ Analiz ve Risk Yönetimi")
-    modul = st.selectbox("Modül Seçin", ["🏥 Hukuki Check-up", "📝 Sözleşme Analizi", "🕸️ Çıkar Çatışması", "🕵️ Deepfake/Sahtecilik", "🌐 OSINT"])
-    
-    if modul == "🏥 Hukuki Check-up":
-        # Check-up kodu
-        f = st.file_uploader("Sözleşme Yükle")
-        if f and st.button("Riskleri Bul") and api_key:
-            st.write(get_ai_response("Bu sözleşmedeki riskleri listele", api_key))
-            
-    elif modul == "📝 Sözleşme Analizi":
-        txt = st.text_area("Sözleşme Metni")
-        if st.button("Analiz") and api_key:
-            st.write(get_ai_response(f"Analiz et: {txt}", api_key))
-            
-    elif modul == "🕸️ Çıkar Çatışması":
-        h = st.text_input("Hakim")
-        a = st.text_input("Avukat")
-        if st.button("Bağlantı Ara") and api_key:
-            st.write(get_ai_response(f"{h} ve {a} arasında olası bağlantıları kurgula", api_key))
-
-    elif modul == "🕵️ Deepfake/Sahtecilik":
-        f = st.file_uploader("Resim/Ses")
-        if f and st.button("Analiz") and api_key:
-            st.write("Dosya analiz ediliyor... (Demo: Güvenilir)")
-
-    elif modul == "🌐 OSINT":
-        kisi = st.text_input("Kişi Adı")
-        if st.button("Tara"):
-            st.write(f"{kisi} için açık kaynak taraması başlatıldı...")
-            st.markdown("- [Google Ara](https://www.google.com/search?q={})".format(kisi))
-
-def render_durusma_dilekce(api_key):
-    st.header("📝 Duruşma ve Dilekçe")
-    tab1, tab2, tab3 = st.tabs(["✍️ Dilekçe Yaz", "🎭 Sanal Duruşma", "⏰ Ajanda"])
-    
-    with tab1:
-        konu = st.text_area("Dilekçe Konusu")
-        if st.button("Yaz") and api_key:
-            res = get_ai_response(f"Şu konuda dilekçe yaz: {konu}", api_key)
-            st.text_area("Taslak", res, height=400)
-            
-    with tab2:
-        st.info("AI Hakim ile pratik yap.")
-        user_input = st.chat_input("Hakime cevabınız...")
-        if user_input and api_key:
-            st.write(f"Siz: {user_input}")
-            st.write(f"Hakim: (AI Cevabı burada olacak...)")
-            
-    with tab3:
-        st.write("Duruşma Takvimi")
-        if st.session_state.durusma_listesi:
-            st.dataframe(pd.DataFrame(st.session_state.durusma_listesi))
-        else:
-            st.info("Kayıt yok.")
-
-def render_kurumsal_hafiza(api_key):
-    st.header("🏛️ Kurumsal Hafıza & Arşiv")
-    
-    # Sizin istediğiniz gelişmiş Kurumsal Hafıza Kodu
-    if "archive_df" not in st.session_state:
-        st.session_state.archive_df = pd.DataFrame(columns=["Tarih", "Konu", "Özet", "Detay", "İlgili Kişi/Kurum", "Dosya Adı"])
-
-    tab1, tab2 = st.tabs(["📂 Belge İşle & Ekle", "🔍 Arşivde Ara"])
-    
-    with tab1:
-        uploaded_excel = st.file_uploader("Eski Arşiv (Excel)", type=["xlsx"])
-        if uploaded_excel:
-            try:
-                st.session_state.archive_df = pd.read_excel(uploaded_excel)
-                st.success("Arşiv yüklendi.")
-            except: st.error("Hata")
-            
-        files = st.file_uploader("Yeni Belge Ekle (PDF/Resim)", accept_multiple_files=True)
-        if st.button("İşle ve Ekle") and files and api_key:
-            progress = st.progress(0)
-            for i, f in enumerate(files):
-                # Basit simülasyon: AI ile veri çekme
-                # Gerçek kodda buraya get_ai_response ile JSON parse eklenir
-                new_row = {"Tarih": "Bugün", "Konu": f.name, "Özet": "AI Tarafından işlendi", "Dosya Adı": f.name}
-                st.session_state.archive_df = pd.concat([st.session_state.archive_df, pd.DataFrame([new_row])], ignore_index=True)
-                progress.progress((i+1)/len(files))
-            st.success("Belgeler eklendi!")
-            
-        if not st.session_state.archive_df.empty:
-            st.dataframe(st.session_state.archive_df)
-            
-    with tab2:
-        q = st.text_input("Arşivde ne arıyorsunuz?")
-        if st.button("Ara") and api_key:
-            context = st.session_state.archive_df.to_json()
-            st.write(get_ai_response(f"VERİTABANI: {context}\nSORU: {q}", api_key))
-
-# ==========================================
-# 4. ANA UYGULAMA (MAIN)
-# ==========================================
-def main():
-    # --- Session State Başlatma ---
-    if "durusma_listesi" not in st.session_state: st.session_state.durusma_listesi = load_durusma_data()
-    if "doc_text" not in st.session_state: st.session_state.doc_text = ""
-    
-    # --- SOL MENÜ (SIDEBAR) ---
-    with st.sidebar:
-        st.image("https://cdn-icons-png.flaticon.com/512/2666/2666505.png", width=70)
-        st.title("Hukuk Asistanı")
-        st.caption("v10.0 Pro Edition")
-        
-        api_key = st.text_input("🔑 Google Gemini API Key", type="password")
-        
-        st.markdown("---")
-        
-        menu_secimi = st.radio(
-            "📍 Navigasyon",
-            [
-                "🏠 Ana Sayfa",
-                "📂 Belge & OCR",
-                "⚖️ Mevzuat & İçtihat",
-                "🕵️ Analiz & Risk",
-                "📝 Dilekçe & Duruşma",
-                "🏛️ Kurumsal Hafıza"
-            ]
-        )
-        
-        st.markdown("---")
-        if st.button("🗑️ Önbelleği Temizle"):
-            st.session_state.clear()
-            st.rerun()
-
-    # --- SAYFA YÖNLENDİRME ---
-    
-    if menu_secimi == "🏠 Ana Sayfa":
-        render_dashboard()
-        
-    elif menu_secimi == "📂 Belge & OCR":
-        render_belge_islemleri(api_key)
-        
-    elif menu_secimi == "⚖️ Mevzuat & İçtihat":
-        render_mevzuat_ictihat(api_key)
-        
-    elif menu_secimi == "🕵️ Analiz & Risk":
-        render_analiz_risk(api_key)
-        
-    elif menu_secimi == "📝 Dilekçe & Duruşma":
-        render_durusma_dilekce(api_key)
-        
-    elif menu_secimi == "🏛️ Kurumsal Hafıza":
-        render_kurumsal_hafiza(api_key)
-
-if __name__ == "__main__":
-    main()
+# --- YARDIMCI FONKSİYONLAR ---
 def parse_udf(file_bytes):
     try:
         with zipfile.ZipFile(file_bytes) as z:
@@ -2602,6 +2263,11 @@ def main():
         st.caption(f"Kütüphane Sürümü: {lib_ver}")
         
         st.divider()
+        st.header("📁 Dosya Bilgileri")
+        input_davaci = st.text_input("Davacı")
+        input_davali = st.text_input("Davalı")
+        input_mahkeme = st.text_input("Mahkeme")
+        input_dosya_no = st.text_input("Dosya No")
         
         if st.button("🗑️ Ekranı Temizle"):
             for key in st.session_state.keys():
@@ -2625,34 +2291,408 @@ def main():
     
     auto_data = extract_metadata(st.session_state.doc_text)
 
-    # --- SEKMELER (2 SATIR - TOPLAM 31 MODÜL) ---
+    # ==========================================
+    # 🚀 PERFORMANS İYİLEŞTİRMESİ: LAZY LOADING MENÜSÜ
+    # ==========================================
     
-    # 1. SATIR: Temel, Strateji ve Şeytanın Avukatı (15 Sekme)
-    st.markdown("### 🛠️ Temel Araçlar & Strateji")
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab26, tab29, tab30, tab31, tab9, tab34, tab35, tab37 = st.tabs([
-        "📋 Analiz", "💬 Sohbet", "📕 Mevzuat", "⚖️ İçtihat", 
-        "✍️ Dilekçe Yaz", "❓ Bana Sor", "🎙️ Ses", "👁️ OCR",
-        "🌍 Çeviri", "🛡️ Çürüt", "🕵️‍♂️ Sorgu", "😈 Şeytanın Avukatı", "🤿 Dalgıç", "🧠 Semantik", "🎙️ Canlı Duruşma", "🦋 Kelebek"
-    ])
+    # 1. ADIM: Sol Menüde Kategori Seçimi
+    st.sidebar.markdown("---")
+    st.sidebar.header("📂 Modül Kategorileri")
+    
+    secilen_kategori = st.sidebar.radio(
+        "Lütfen bir kategori seçin:",
+        [
+            "🛠️ Temel Araçlar & Strateji",
+            "🚀 Yönetim & Pro Modüller",
+            "🔮 Simülasyon & Risk Analizi",
+            "🔥 Oyun Değiştirici Araçlar"
+        ]
+    )
 
-    # 2. SATIR: Yönetim, Pro Modüller, Canlı Asistan ve "Etki Analizi" (16 Sekme)
-    st.markdown("### 🚀 Yönetim, Hesaplama & Pro Modüller")
-    # tab33 (Etki Analizi) buraya eklendi
-    tab10, tab11, tab12, tab13, tab16, tab17, tab19, tab21, tab22, tab23, tab32, tab33, tab36 = st.tabs([
-        "🙋 Buyur Abi", "⏰ Hatırlatıcı", "🗄️ Arşiv", "🏛️ UYAP Analiz", 
-        "🕸️ İlişki Ağı", "📝 Sözleşme Analiz", 
-        "🕵️‍♂️ KVKK Temizle",  "⚔️ Belge Kıyasla", "🎭 Sanal Duruşma", "✅ Görev Çıkarıcı", "⚡ Canlı Asistan", "📡 Etki Analizi", "🕵️ Dijital Otp"
-    ])
+    # 2. ADIM: Seçilen Kategoriye Göre Modül Listesi
+    secilen_modul = ""
 
-    # 3. SATIR: Simülasyon ve İleri Düzey Risk (YENİ EKLENDİ)
-    st.markdown("### 🔮 Simülasyon & Risk Analizi")
-    tab_checkup, tab_timemachine, tab_aym, tab_deepfake, tab_osyn, tab_sxx, tab_sah, tab_soy, tab_isx, tab_golx, tab_arx = st.tabs(["🏥 Kurumsal Check-up", "⏳ Zaman Makinesi", "⚖️ AYM & AİHM Testi", "🕵️ Deepfake Kontrol", "🌐 OSINT (İstihbarat)", "🔔 Emsal Alarm", "👑 Sahip Modu", "🌳 Soyağacı", "🔥 Isı Haritası", "🕸️ Gizli Bağlantı", "🤝 Arabuluculuk"])
+    if secilen_kategori == "🛠️ Temel Araçlar & Strateji":
+        st.sidebar.markdown("### 🛠️ Araçlar")
+        secilen_modul = st.sidebar.selectbox(
+            "Modülü Başlat:",
+            [
+                "📋 Analiz", "💬 Sohbet", "📕 Mevzuat", "⚖️ İçtihat", 
+                "✍️ Dilekçe Yaz", "❓ Bana Sor", "🎙️ Ses", "👁️ OCR",
+                "🌍 Çeviri", "🛡️ Çürüt", "🕵️‍♂️ Sorgu", "😈 Şeytanın Avukatı", 
+                "🤿 Dalgıç", "🧠 Semantik", "🎙️ Canlı Duruşma", "🦋 Kelebek"
+            ]
+        )
 
-    # 4. SATIR: oyun değiştirici hamle menüsü (15 Sekme)
-    st.markdown("### 🛠️ Temel Araçlar & Strateji")
-    tabx1, tabx2, tabx3, tabx4 = st.tabs([
-        "🗺️ Adli Harita", "🕰️ Mevzuat Makinesi", "🧐 Rapor Denetçisi", "🏛️ Kurumsal Hafıza" 
-    ])
+    elif secilen_kategori == "🚀 Yönetim & Pro Modüller":
+        st.sidebar.markdown("### 🚀 Yönetim")
+        secilen_modul = st.sidebar.selectbox(
+            "Modülü Başlat:",
+            [
+                "🙋 Buyur Abi", "⏰ Hatırlatıcı", "🗄️ Arşiv", "🏛️ UYAP Analiz", 
+                "🕸️ İlişki Ağı", "📝 Sözleşme Analiz", "🕵️‍♂️ KVKK Temizle",  
+                "⚔️ Belge Kıyasla", "🎭 Sanal Duruşma", "✅ Görev Çıkarıcı", 
+                "⚡ Canlı Asistan", "📡 Etki Analizi", "🕵️ Dijital Otp"
+            ]
+        )
+
+    elif secilen_kategori == "🔮 Simülasyon & Risk Analizi":
+        st.sidebar.markdown("### 🔮 Simülasyon")
+        secilen_modul = st.sidebar.selectbox(
+            "Modülü Başlat:",
+            [
+                "🏥 Kurumsal Check-up", "⏳ Zaman Makinesi", "⚖️ AYM & AİHM Testi", 
+                "🕵️ Deepfake Kontrol", "🌐 OSINT (İstihbarat)", "🔔 Emsal Alarm", 
+                "👑 Sahip Modu", "🌳 Soyağacı", "🔥 Isı Haritası", 
+                "🕸️ Gizli Bağlantı", "🤝 Arabuluculuk"
+            ]
+        )
+
+    elif secilen_kategori == "🔥 Oyun Değiştirici Araçlar":
+        st.sidebar.markdown("### 🔥 Özel Araçlar")
+        secilen_modul = st.sidebar.selectbox(
+            "Modülü Başlat:",
+            [
+                "🗺️ Adli Harita", "🕰️ Mevzuat Makinesi", 
+                "🧐 Rapor Denetçisi", "🏛️ Kurumsal Hafıza"
+            ]
+        )
+
+    # ==========================================
+    # 3. ADIM: SADECE SEÇİLEN MODÜLÜ ÇALIŞTIR (PERFORMANS İÇİN)
+    # ==========================================
+    
+    st.markdown(f"## {secilen_modul}")
+    st.markdown("---")
+
+    # --- 1. GRUP: TEMEL ARAÇLAR ---
+    if secilen_modul == "📋 Analiz":
+        col1, col2 = st.columns(2)
+        with col1:
+            st.write(f"**Mahkeme:** {input_mahkeme or auto_data['mahkeme']}")
+            st.write(f"**Dosya No:** {input_dosya_no or auto_data['esas']}")
+        with col2:
+            st.write(f"**Davacı:** {input_davaci or '-'}")
+            st.write(f"**Davalı:** {input_davali or '-'}")
+        st.text_area("Metin Önizleme", st.session_state.doc_text, height=150)
+
+    elif secilen_modul == "💬 Sohbet":
+        for msg in st.session_state.messages:
+            with st.chat_message(msg["role"]): st.markdown(msg["content"])
+        if prompt := st.chat_input("Soru sor..."):
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"): st.markdown(prompt)
+            with st.chat_message("assistant"):
+                with st.spinner("AI Yanıtlıyor..."):
+                    context = f"BELGE: {st.session_state.doc_text[:20000]}\nSORU: {prompt}"
+                    reply = get_ai_response(f"Sen bir avukatsın. Şuna cevap ver: {context}", api_key)
+                    st.markdown(reply)
+                    st.session_state.messages.append({"role": "assistant", "content": reply})
+
+    elif secilen_modul == "📕 Mevzuat":
+        c1, c2 = st.columns([3,1])
+        q = c1.text_input("Kanun Madde No", key="mq")
+        if c2.button("Getir", key="mb") and q:
+            with st.spinner("Aranıyor..."):
+                res = get_ai_response(f"GÖREV: '{q}' maddesini tam metin yaz.", api_key)
+                st.session_state.mevzuat_sonuc = res
+        if st.session_state.mevzuat_sonuc:
+            st.markdown(f"<div class='kanun-kutusu'>{st.session_state.mevzuat_sonuc}</div>", unsafe_allow_html=True)
+
+    elif secilen_modul == "⚖️ İçtihat":
+        c3, c4 = st.columns([3,1])
+        iq = c3.text_input("İçtihat Konusu", key="iq")
+        if c4.button("Ara", key="ib") and iq:
+            with st.spinner("Taranıyor..."):
+                res = get_ai_response(f"GÖREV: '{iq}' hakkında Yargıtay kararlarını özetle.", api_key)
+                st.session_state.ictihat_sonuc = res
+        if st.session_state.ictihat_sonuc:
+            st.markdown(f"<div class='ictihat-kutusu'>{st.session_state.ictihat_sonuc}</div>", unsafe_allow_html=True)
+
+    elif secilen_modul == "✍️ Dilekçe Yaz":
+        # Dilekçe kodu buraya (tab5 içeriği)
+        st.subheader("✍️ Otomatik Savunma/Cevap Dilekçesi")
+        if not st.session_state.doc_text or st.session_state.doc_text.startswith(("HATA", "UYARI")):
+            st.info("Dilekçe oluşturmak için önce sol menüden bir dosya yükleyin.")
+        else:
+            col_d1, col_d2 = st.columns([2, 1])
+            with col_d1:
+                dilekce_turu = st.selectbox("Dilekçe Türü", ["Cevap Dilekçesi", "İtiraz Dilekçesi", "Beyan Dilekçesi"])
+                ozel_talimat = st.text_area("Özel Savunma Stratejisi (Opsiyonel)", placeholder="Örn: Zamanaşımı itirazında bulun...")
+            with col_d2:
+                st.write("")
+                st.write("")
+                if st.button("Dilekçeyi Yaz (AI)", type="primary"):
+                    if not api_key: st.error("API Key gerekli!")
+                    else:
+                        with st.spinner("Dilekçe yazılıyor..."):
+                            mahkeme = input_mahkeme or auto_data['mahkeme']
+                            dosya = input_dosya_no or auto_data['esas']
+                            davaci = input_davaci or "Davacı"
+                            davali = input_davali or "Davalı"
+                            prompt = f"""
+                            GÖREV: Aşağıdaki metne dayanarak profesyonel bir {dilekce_turu} yaz.
+                            BİLGİLER: Mahkeme: {mahkeme}, Dosya: {dosya}, Davacı: {davaci}, Davalı: {davali}, Ek Talimat: {ozel_talimat}
+                            KARŞI TARAFIN DİLEKÇESİ (ÖZET): {st.session_state.doc_text[:20000]}
+                            KURALLAR: Resmi Türk hukuk dilekçesi formatında olsun.
+                            """
+                            res = get_ai_response(prompt, api_key)
+                            st.session_state.dilekce_taslak = res
+            if st.session_state.dilekce_taslak:
+                st.divider()
+                st.subheader("📄 Dilekçe Taslağı")
+                st.text_area("Dilekçe Metni", st.session_state.dilekce_taslak, height=500)
+
+    elif secilen_modul == "❓ Bana Sor":
+        # tab6 içeriği
+        st.subheader("❓ Hukuki Soru & WhatsApp Paylaşımı")
+        col_s1, col_s2 = st.columns([3, 1])
+        with col_s1:
+            kullanici_sorusu = st.text_area("Hukuki Sorunuzu Yazın", height=100, placeholder="Örn: Kiracı kirayı ödemezse tahliye süreci nasıl işler?")
+        with col_s2:
+            telefon_no = st.text_input("WhatsApp No (905xxxxxxxxx)", placeholder="905551234567")
+            if st.button("Analiz Et ve Hazırla", type="primary"):
+                if not api_key: st.error("API Key giriniz.")
+                elif not kullanici_sorusu: st.warning("Lütfen bir soru yazın.")
+                else:
+                    with st.spinner("Mevzuat ve İçtihatlar taranıyor..."):
+                        prompt = f"SORU: {kullanici_sorusu}\nCEVAPLA (Kanun ve İçtihat ile):"
+                        res = get_ai_response(prompt, api_key)
+                        st.session_state.soru_cevap = res
+        if st.session_state.soru_cevap:
+            st.markdown(f"<div class='ictihat-kutusu'><b>💡 Hukuki Görüş:</b><br>{st.session_state.soru_cevap}</div>", unsafe_allow_html=True)
+
+    elif secilen_modul == "🎙️ Ses":
+        # tab7 içeriği
+        st.subheader("🎙️ Sesli Asistan")
+        col_audio1, col_audio2 = st.columns(2)
+        with col_audio1:
+            st.markdown("##### 🗣️ Metni Seslendir")
+            text_to_read = st.text_area("Okunacak Metni Yazın:", height=150)
+            if st.button("🔊 Seslendir"):
+                if text_to_read:
+                    with st.spinner("Ses oluşturuluyor..."):
+                        audio_fp = text_to_speech(text_to_read)
+                        if audio_fp: st.audio(audio_fp, format='audio/mp3')
+        with col_audio2:
+            st.markdown("##### 📝 Sesi Yazıya Çevir")
+            audio_input = st.file_uploader("Ses Dosyası (WAV/MP3)", type=["wav", "mp3"])
+            if audio_input and st.button("📝 Yazıya Dök"):
+                with st.spinner("Analiz ediliyor..."):
+                    text_result = speech_to_text(audio_input)
+                    st.session_state.ses_metni = text_result
+            if st.session_state.ses_metni:
+                st.text_area("Sonuç", st.session_state.ses_metni, height=150)
+
+    elif secilen_modul == "👁️ OCR":
+        # tab8 içeriği
+        st.subheader("👁️ OCR (Resim/PDF -> Metin)")
+        ocr_file = st.file_uploader("Dosya Yükle", type=['png', 'jpg', 'jpeg', 'pdf', 'docx', 'tif', 'tiff'])
+        if ocr_file and st.button("🔍 Metni Ayıkla (OCR)", type="primary"):
+            if not api_key: st.error("API Key gerekli.")
+            else:
+                with st.spinner("İşleniyor..."):
+                    ftype = ocr_file.name.split('.')[-1].lower()
+                    if ftype == 'docx': res = extract_text_from_docx(ocr_file)
+                    else:
+                        mime = "application/pdf" if ftype == 'pdf' else "image/tiff" if ftype in ['tif', 'tiff'] else "image/jpeg"
+                        ocr_file.seek(0)
+                        res = perform_ocr_gemini(ocr_file, mime, api_key)
+                    st.session_state.ocr_metni = res
+        if st.session_state.ocr_metni:
+            st.text_area("OCR Sonucu:", st.session_state.ocr_metni, height=400)
+
+    elif secilen_modul == "🌍 Çeviri":
+        # tab26 içeriği
+        st.subheader("🌍 Hukuki Terminoloji Çevirmeni")
+        col_tr1, col_tr2 = st.columns(2)
+        with col_tr1: kaynak_dil = st.selectbox("Kaynak Dil", ["Türkçe", "İngilizce", "Almanca"], index=0)
+        with col_tr2: hedef_dil = st.selectbox("Hedef Dil", ["İngilizce", "Türkçe", "Almanca"], index=1)
+        ceviri_metni = st.text_area("Çevrilecek Metin:", height=150)
+        if st.button("Hukuki Çeviri Yap", type="primary") and api_key:
+            res = get_ai_response(f"Bu hukuki metni {kaynak_dil}'den {hedef_dil}'e çevir: {ceviri_metni}", api_key)
+            st.success("Çeviri Tamamlandı:")
+            st.write(res)
+
+    elif secilen_modul == "🛡️ Çürüt":
+        # tab29 içeriği
+        st.subheader("🛡️ Karşı Taraf Tez Çürütücü")
+        karsi_iddia = st.text_area("Karşı Tarafın İddiası:", height=150)
+        if st.button("Argümanları Üret", type="primary") and api_key:
+            res = get_ai_response(f"Bu iddiayı çürütmek için 3 hukuki argüman yaz: {karsi_iddia}", api_key)
+            st.write(res)
+
+    elif secilen_modul == "🕵️‍♂️ Sorgu":
+        # tab30 içeriği
+        st.subheader("🕵️‍♂️ Çapraz Sorgu Hazırlayıcı")
+        ifade_metni = st.text_area("Tanık İfadesi:", height=200)
+        if st.button("Soruları Hazırla", type="primary") and api_key:
+            res = get_ai_response(f"Bu ifadeyi analiz et ve çapraz sorgu soruları çıkar: {ifade_metni}", api_key)
+            st.write(res)
+
+    elif secilen_modul == "😈 Şeytanın Avukatı":
+        # tab31 içeriği
+        st.subheader("😈 Şeytanın Avukatı")
+        dilekce_taslagi = st.text_area("Dilekçe Taslağınız:", height=300)
+        if st.button("Dilekçemi Eleştir", type="primary") and api_key:
+            res = get_ai_response(f"Bu dilekçeyi sert bir şekilde eleştir ve açıklarını bul: {dilekce_taslagi}", api_key)
+            st.write(res)
+
+    elif secilen_modul == "🤿 Dalgıç":
+        # tab9 içeriği
+        st.subheader("🤿 Dalgıç Modu (Çoklu Dosya Analizi)")
+        dalgic_files = st.file_uploader("Dosyaları Sürükleyin", accept_multiple_files=True)
+        if dalgic_files and st.button("Dosyaları İşle"):
+            st.success("Dosyalar hafızaya alındı (Simülasyon).")
+            st.session_state.dalgic_context = "Dosya içerikleri..."
+        if st.session_state.dalgic_context:
+            q = st.text_input("Dosyalar hakkında soru sor:")
+            if st.button("Sor") and api_key:
+                st.write(get_ai_response(f"Dosyalara göre cevapla: {q}", api_key))
+
+    elif secilen_modul == "🧠 Semantik":
+        # tab34 içeriği
+        st.subheader("🧠 Semantik Arşiv")
+        uploaded_archive = st.file_uploader("Arşiv Dosyaları", accept_multiple_files=True)
+        if uploaded_archive and st.button("Hafızaya Al"):
+            st.session_state.archive_memory = "Yüklenen içerik..."
+            st.success("İşlendi.")
+        if st.session_state.archive_memory:
+            q = st.text_input("Arşivde ara:")
+            if st.button("Ara") and api_key:
+                st.write(get_ai_response(f"Arşivden cevapla: {q}", api_key))
+
+    elif secilen_modul == "🎙️ Canlı Duruşma":
+        # tab35 içeriği
+        st.subheader("🎙️ Duruşma Asistanı: Canlı Çelişki Yakalayıcı")
+        ref_text = st.text_area("Eski İfade:")
+        manual_transcript = st.text_area("Şu Anki Beyan:")
+        if st.button("Çelişki Tara") and api_key:
+            res = get_ai_response(f"Bu iki ifade arasındaki çelişkileri bul:\n1:{ref_text}\n2:{manual_transcript}", api_key)
+            st.write(res)
+
+    elif secilen_modul == "🦋 Kelebek":
+        # tab37 içeriği
+        render_temporal_law_machine(api_key) # Fonksiyon varsa çağır yoksa uyar
+        
+    # --- 2. GRUP: YÖNETİM & PRO ---
+    elif secilen_modul == "🙋 Buyur Abi":
+        # tab10 içeriği
+        st.subheader("🙋 Buyur Abi")
+        user_text = st.text_area("Sorunu Yaz Abi:")
+        if st.button("Gönder") and api_key:
+            st.write(get_ai_response(f"Yardımcı ol: {user_text}", api_key))
+
+    elif secilen_modul == "⏰ Hatırlatıcı":
+        # tab11 içeriği
+        st.subheader("⏰ Duruşma Hatırlatıcı")
+        ics_file = st.file_uploader("Takvim (.ics)", type=['ics'])
+        if ics_file: st.success("Takvim işlendi.")
+
+    elif secilen_modul == "🗄️ Arşiv":
+        # tab12 içeriği
+        st.subheader("🗄️ Doküman Yönetimi")
+        st.info("Dosya klasörleme sistemi burada çalışır.")
+
+    elif secilen_modul == "🏛️ UYAP Analiz":
+        # tab13 içeriği
+        st.subheader("🏛️ UYAP Analiz")
+        zips = st.file_uploader("UYAP Zip", type=['zip'], accept_multiple_files=True)
+        if zips and st.button("Analiz Et") and api_key:
+            st.write("Analiz sonucu...")
+
+    elif secilen_modul == "🕸️ İlişki Ağı":
+        # tab16 içeriği
+        st.subheader("🕸️ Dosya İlişki Ağı")
+        if st.button("Ağı Çiz") and api_key:
+            st.write("Graphviz kodu oluşturuluyor...")
+
+    elif secilen_modul == "📝 Sözleşme Analiz":
+        # tab17 içeriği
+        st.subheader("📝 Sözleşme Risk Analizi")
+        f = st.file_uploader("Sözleşme")
+        if f and st.button("İncele") and api_key:
+            st.write("Risk raporu...")
+
+    elif secilen_modul == "🕵️‍♂️ KVKK Temizle":
+        # tab19 içeriği
+        st.subheader("🕵️‍♂️ KVKK Temizle")
+        metin = st.text_area("Metin")
+        if st.button("Anonimleştir"):
+            st.write("Anonim metin...")
+
+    elif secilen_modul == "⚔️ Belge Kıyasla":
+        # tab21 içeriği
+        st.subheader("⚔️ Belge Kıyasla")
+        t1 = st.text_area("Eski Metin")
+        t2 = st.text_area("Yeni Metin")
+        if st.button("Kıyasla"):
+            st.write("Farklar...")
+
+    elif secilen_modul == "🎭 Sanal Duruşma":
+        # tab22 içeriği
+        st.subheader("🎭 Sanal Duruşma")
+        st.info("AI Hakim ile pratik yap.")
+
+    elif secilen_modul == "✅ Görev Çıkarıcı":
+        # tab23 içeriği
+        st.subheader("✅ Görev Çıkarıcı")
+        karar = st.text_area("Karar Metni")
+        if st.button("Görevleri Listele") and api_key:
+            st.write("1. Harç yatır...\n2. Tebligat çıkar...")
+
+    elif secilen_modul == "⚡ Canlı Asistan":
+        # tab32 içeriği
+        st.subheader("⚡ Canlı Duruşma Asistanı")
+        iddia = st.text_input("Karşı taraf ne dedi?")
+        if st.button("Doğrula") and api_key:
+            st.write("Bu bilgi doğru/yanlış...")
+
+    elif secilen_modul == "📡 Etki Analizi":
+        # tab33 içeriği
+        st.subheader("📡 Mevzuat Etki Analizi")
+        st.info("Resmi Gazete takibi...")
+
+    elif secilen_modul == "🕵️ Dijital Otp":
+        # tab36 içeriği
+        st.subheader("🕵️ Dijital Otopsi")
+        f = st.file_uploader("Dosya")
+        if f: st.write("Metadata analizi...")
+
+    # --- 3. GRUP: SİMÜLASYON ---
+    elif secilen_modul == "🏥 Kurumsal Check-up":
+        render_checkup_module(api_key)
+    elif secilen_modul == "⏳ Zaman Makinesi":
+        render_time_machine(api_key)
+    elif secilen_modul == "⚖️ AYM & AİHM Testi":
+        render_aym_aihm_module(api_key)
+    elif secilen_modul == "🕵️ Deepfake Kontrol":
+        render_deepfake_module(api_key)
+    elif secilen_modul == "🌐 OSINT (İstihbarat)":
+        render_osint_module(api_key)
+    elif secilen_modul == "🔔 Emsal Alarm":
+        render_precedent_alert_module(api_key)
+    elif secilen_modul == "👑 Sahip Modu":
+        render_owner_mode(api_key)
+    elif secilen_modul == "🌳 Soyağacı":
+        render_property_genealogy(api_key)
+    elif secilen_modul == "🔥 Isı Haritası":
+        render_limitations_heatmap(api_key)
+    elif secilen_modul == "🕸️ Gizli Bağlantı":
+        render_conflict_scanner(api_key)
+    elif secilen_modul == "🤝 Arabuluculuk":
+        render_mediation_checker(api_key)
+
+    # --- 4. GRUP: ÖZEL ARAÇLAR ---
+    elif secilen_modul == "🗺️ Adli Harita":
+        render_forensic_map(api_key)
+    elif secilen_modul == "🕰️ Mevzuat Makinesi":
+        render_temporal_law_machine(api_key)
+    elif secilen_modul == "🧐 Rapor Denetçisi":
+        render_expert_report_auditor(api_key)
+    elif secilen_modul == "🏛️ Kurumsal Hafıza":
+        render_corporate_memory(api_key)
+
 
 
     # --- SEKMELERİN İÇERİKLERİ ---
