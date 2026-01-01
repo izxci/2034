@@ -426,10 +426,10 @@ def main():
     
     # 1. SATIR: Temel, Strateji ve Şeytanın Avukatı (15 Sekme)
     st.markdown("### 🛠️ Temel Araçlar & Strateji")
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab26, tab29, tab30, tab31, tab9, tab34, tab35 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab26, tab29, tab30, tab31, tab9, tab34, tab35, tab37 = st.tabs([
         "📋 Analiz", "💬 Sohbet", "📕 Mevzuat", "⚖️ İçtihat", 
-        "✍️ Dilekçe Yaz", "❓ Bana Sor", "🎙️ Sesli Komut", "👁️ OCR",
-        "🌍 Çeviri", "🛡️ Tez Çürüt", "🕵️‍♂️ Sorgu", "😈 Şeytanın Avukatı", "🤿 Dalgıç", "🧠 Semantik Arşiv", "🎙️ Canlı Duruşma",
+        "✍️ Dilekçe Yaz", "❓ Bana Sor", "🎙️ Ses", "👁️ OCR",
+        "🌍 Çeviri", "🛡️ Çürüt", "🕵️‍♂️ Sorgu", "😈 Şeytanın Avukatı", "🤿 Dalgıç", "🧠 Semantik", "🎙️ Canlı Duruşma", "🦋 Kelebek"
     ])
 
     # 2. SATIR: Yönetim, Pro Modüller, Canlı Asistan ve "Etki Analizi" (16 Sekme)
@@ -1953,6 +1953,82 @@ def main():
                             """, unsafe_allow_html=True)
                     else:
                         st.info("Detaylı sahtecilik analizi için API Key gereklidir.")
+
+    with tab37: # 3. SATIR: Mevzuat Kelebek Etkisi Simülatörü
+        st.subheader("🦋 Mevzuat Kelebek Etkisi Simülatörü (Graph Analizi)")
+        st.info("Hukuk bir ağdır. Bir kanun maddesindeki tek bir kelime değişikliğinin, en uçtaki yönetmelik, tebliğ ve ruhsatları nasıl etkilediğini haritalandırır.")
+
+        col_graph1, col_graph2 = st.columns([1, 2])
+
+        with col_graph1:
+            st.markdown("### 🌪️ Değişiklik Girdisi")
+            law_change = st.text_area(
+                "Yapılan/Beklenen Değişiklik:", 
+                height=150, 
+                placeholder="Örn: İmar Kanunu'nda 'yüksek yapı' tanımı 10 kattan 8 kata düşürüldü."
+            )
+            
+            st.markdown("### 🎯 Hedef Sektör")
+            sector = st.selectbox("Etki Analizi Odak Alanı:", 
+                                  ["Genel Bakış", "İnşaat & Emlak", "Vergi & Finans", "İş Hukuku & IK", "Sağlık & İlaç"])
+
+            analyze_btn = st.button("🕸️ Etki Ağını Haritalandır", use_container_width=True)
+
+        with col_graph2:
+            if analyze_btn and law_change:
+                if not api_key:
+                    st.warning("Bu simülasyon için API Key gereklidir.")
+                else:
+                    import graphviz
+                    
+                    with st.spinner("Yapay Zeka, hukuk ağındaki dolaylı bağlantıları tarıyor..."):
+                        # AI'dan Graphviz formatında veri istiyoruz
+                        prompt = f"""
+                        GÖREV: Sen bir Hukuk Graph Database (Neo4j) simülatörüsün.
+                        
+                        GİRDİ: "{law_change}"
+                        ODAK SEKTÖR: {sector}
+                        
+                        İSTENEN ÇIKTI:
+                        Bu değişikliğin "Kelebek Etkisi"ni gösteren bir DOT (Graphviz) kodu oluştur.
+                        
+                        KURALLAR:
+                        1. Merkezde "Kanun Değişikliği" olsun (Kırmızı Düğüm).
+                        2. 1. Derece etkilenenler: Yönetmelikler/Tebliğler (Mavi Düğüm).
+                        3. 2. Derece etkilenenler: Sektörel Uygulamalar/İzinler (Sarı Düğüm).
+                        4. 3. Derece (Kelebek Etkisi): Hiç beklenmeyen uzak riskler (Siyah/Koyu Kırmızı Düğüm). Örn: "3 yıl önceki ruhsat iptali riski".
+                        5. Sadece DOT kodunu ver, açıklama yapma. Kod `digraph` ile başlasın.
+                        6. Türkçe karakter kullanma (yerine ingilizce karakterler kullan, örn: 'ı' yerine 'i').
+                        7. Etiketler kısa ve çarpıcı olsun.
+                        """
+                        
+                        try:
+                            # AI Cevabını al
+                            graph_code_raw = get_ai_response(prompt, api_key)
+                            
+                            # Temizlik (Markdown işaretlerini kaldır)
+                            graph_code = graph_code_raw.replace("```dot", "").replace("```", "").strip()
+                            
+                            # Graphviz ile çizim
+                            st.graphviz_chart(graph_code)
+                            
+                            st.markdown("### 🧠 Yapay Zeka Risk Analizi")
+                            st.success("Simülasyon Tamamlandı. Yukarıdaki ağ haritası, bu değişikliğin tetikleyebileceği zincirleme reaksiyonları göstermektedir.")
+                            
+                            # Ekstra Yorum
+                            explanation_prompt = f"Bu graph haritasındaki en tehlikeli 'Kelebek Etkisi' (En uçtaki risk) nedir? '{law_change}' değişikliği neden orayı etkiliyor? Tek paragraf açıkla."
+                            explanation = get_ai_response(explanation_prompt, api_key)
+                            
+                            st.markdown(f"""
+                            <div style="border: 1px solid #ffcc00; background-color: #fffbea; padding: 15px; border-radius: 8px;">
+                                <strong>⚠️ Gizli Tehlike (Kelebek Etkisi):</strong><br>
+                                {explanation}
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                        except Exception as e:
+                            st.error(f"Haritalama hatası: {e}")
+                            st.info("Graphviz kütüphanesi yüklü olmayabilir veya AI hatalı kod üretti.")
 
 
 
