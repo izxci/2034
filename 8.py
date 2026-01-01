@@ -435,10 +435,10 @@ def main():
     # 2. SATIR: Yönetim, Pro Modüller, Canlı Asistan ve "Etki Analizi" (16 Sekme)
     st.markdown("### 🚀 Yönetim, Hesaplama & Pro Modüller")
     # tab33 (Etki Analizi) buraya eklendi
-    tab10, tab11, tab12, tab13, tab16, tab17, tab19, tab21, tab22, tab23, tab32, tab33 = st.tabs([
+    tab10, tab11, tab12, tab13, tab16, tab17, tab19, tab21, tab22, tab23, tab32, tab33, tab36 = st.tabs([
         "🙋 Buyur Abi", "⏰ Hatırlatıcı", "🗄️ Arşiv", "🏛️ UYAP Analiz", 
         "🕸️ İlişki Ağı", "📝 Sözleşme Analiz", 
-        "🕵️‍♂️ KVKK Temizle",  "⚔️ Belge Kıyasla", "🎭 Sanal Duruşma", "✅ Görev Çıkarıcı", "⚡ Canlı Asistan", "📡 Etki Analizi"
+        "🕵️‍♂️ KVKK Temizle",  "⚔️ Belge Kıyasla", "🎭 Sanal Duruşma", "✅ Görev Çıkarıcı", "⚡ Canlı Asistan", "📡 Etki Analizi", "🕵️ Dijital Otp"
     ])
 
 
@@ -1825,6 +1825,134 @@ def main():
                 elif not api_key:
                     st.error("Analiz için API Key gereklidir.")
 
+    with tab36: # Dijital Otopsi & Metadata Analizi
+        st.subheader("🕵️ Dijital Otopsi ve Metadata Dedektifi")
+        st.info("Bir dosyanın (PDF veya Resim) 'perde arkasındaki' verilerini (Metadata/EXIF) analiz eder. Dosyanın ne zaman, kim tarafından, hangi yazılımla oluşturulduğunu ve değiştirildiğini ortaya çıkarır.")
+
+        col_meta1, col_meta2 = st.columns([1, 2])
+
+        with col_meta1:
+            st.markdown("### 📂 Delil Yükle")
+            uploaded_evid = st.file_uploader("İncelenecek Dosya", type=["pdf", "jpg", "jpeg", "png", "tiff"])
+            
+            st.markdown("---")
+            st.markdown("### 📅 İddia Kontrolü")
+            claimed_date = st.date_input("Belgenin İddia Edilen Tarihi (Opsiyonel)", value=None)
+            st.caption("Eğer bu belgenin '2020 yılında yapıldığı' iddia ediliyorsa, o tarihi seçin. Sistem tutarlılığı denetlesin.")
+
+        with col_meta2:
+            if uploaded_evid:
+                # Kütüphaneleri Çağır
+                from datetime import datetime
+                import pandas as pd
+                
+                meta_data = {}
+                file_type = uploaded_evid.name.split('.')[-1].lower()
+                
+                st.markdown(f"### 🧬 Analiz Raporu: {uploaded_evid.name}")
+                
+                # --- PDF ANALİZİ ---
+                if file_type == 'pdf':
+                    try:
+                        import PyPDF2
+                        pdf_reader = PyPDF2.PdfReader(uploaded_evid)
+                        doc_info = pdf_reader.metadata
+                        
+                        if doc_info:
+                            # PDF Tarih Formatını Okunabilir Yapma (D:20230101...)
+                            def parse_pdf_date(date_str):
+                                if not date_str: return "Bilinmiyor"
+                                try:
+                                    # Genelde D:YYYYMMDDHHmmSS formatındadır
+                                    clean_date = date_str.replace("D:", "").split('+')[0].split('-')[0]
+                                    return datetime.strptime(clean_date, "%Y%m%d%H%M%S").strftime("%d.%m.%Y %H:%M:%S")
+                                except:
+                                    return date_str # Parse edilemezse ham hali
+
+                            meta_data = {
+                                "Oluşturulma Tarihi (CreationDate)": parse_pdf_date(doc_info.get('/CreationDate')),
+                                "Değiştirilme Tarihi (ModDate)": parse_pdf_date(doc_info.get('/ModDate')),
+                                "Yazar (Author)": doc_info.get('/Author', 'Belirtilmemiş'),
+                                "Oluşturan Yazılım (Producer)": doc_info.get('/Producer', 'Belirtilmemiş'),
+                                "Uygulama (Creator)": doc_info.get('/Creator', 'Belirtilmemiş'),
+                                "Sayfa Sayısı": len(pdf_reader.pages)
+                            }
+                        else:
+                            st.warning("Bu PDF dosyasında metadata bulunamadı veya silinmiş.")
+                    except Exception as e:
+                        st.error(f"PDF Analiz Hatası: {e}")
+
+                # --- RESİM (EXIF) ANALİZİ ---
+                elif file_type in ['jpg', 'jpeg', 'png', 'tiff']:
+                    try:
+                        from PIL import Image, ExifTags
+                        image = Image.open(uploaded_evid)
+                        exif_raw = image._getexif()
+                        
+                        if exif_raw:
+                            for tag, value in exif_raw.items():
+                                decoded = ExifTags.TAGS.get(tag, tag)
+                                # Önemli verileri filtrele
+                                if decoded in ['DateTime', 'DateTimeOriginal', 'Make', 'Model', 'Software', 'GPSInfo', 'Artist']:
+                                    meta_data[decoded] = str(value)
+                            
+                            # Eğer boşsa
+                            if not meta_data:
+                                meta_data = {"Durum": "EXIF verisi bulunamadı (Temizlenmiş olabilir)."}
+                        else:
+                            meta_data = {"Durum": "Bu resimde EXIF verisi yok."}
+                            
+                    except Exception as e:
+                        st.error(f"Resim Analiz Hatası: {e}")
+
+                # --- SONUÇLARI GÖSTER ---
+                if meta_data:
+                    # 1. Tablo Gösterimi
+                    df_meta = pd.DataFrame(list(meta_data.items()), columns=["Veri Türü", "Tespit Edilen Değer"])
+                    st.table(df_meta)
+
+                    # 2. YAPAY ZEKA DEDEKTİF YORUMU
+                    if api_key:
+                        st.divider()
+                        with st.spinner("🕵️ Yapay Zeka delil üzerinde sahtecilik taraması yapıyor..."):
+                            
+                            prompt = f"""
+                            GÖREV: Sen uzman bir Adli Bilişim (Digital Forensics) uzmanısın.
+                            
+                            ANALİZ EDİLEN DOSYA METADATASI:
+                            {meta_data}
+                            
+                            İDDİA EDİLEN TARİH: {claimed_date if claimed_date else "Belirtilmedi"}
+                            
+                            İSTENEN ANALİZ:
+                            1. **Zaman Tutarlılığı:** Dosyanın oluşturulma tarihi ile iddia edilen tarih uyuşuyor mu? (Örn: 2020 denmiş ama CreationDate 2024 ise bu bir sahtecilik şüphesidir).
+                            2. **Yazılım İzi:** Kullanılan yazılım (Producer/Software) dosyanın iddia edilen tarihinde var mıydı? (Örn: 2010 tarihli belgede Word 2019 imzası varsa yakala).
+                            3. **Manipülasyon Şüphesi:** Değiştirilme tarihi (ModDate) ile Oluşturulma tarihi arasında şüpheli bir fark var mı?
+                            4. **Sonuç:** Bu belge teknik olarak güvenilir mi yoksa şüpheli mi?
+                            """
+                            
+                            report = get_ai_response(prompt, api_key)
+                            
+                            st.markdown("### 🚨 Adli Bilişim Uzman Görüşü")
+                            
+                            # Renkli Kutu Mantığı
+                            if "şüpheli" in report.lower() or "uyuşmuyor" in report.lower() or "sahte" in report.lower():
+                                box_color = "#ffe6e6" # Kırmızımsı
+                                border_color = "#ff0000"
+                                icon = "⚠️"
+                            else:
+                                box_color = "#e6fffa" # Yeşilimsi
+                                border_color = "#00b894"
+                                icon = "✅"
+
+                            st.markdown(f"""
+                            <div style="background-color:{box_color}; border-left: 5px solid {border_color}; padding:20px; border-radius:10px;">
+                                <h4>{icon} Analiz Sonucu</h4>
+                                {report}
+                            </div>
+                            """, unsafe_allow_html=True)
+                    else:
+                        st.info("Detaylı sahtecilik analizi için API Key gereklidir.")
 
 
 
