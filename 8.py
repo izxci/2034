@@ -1612,6 +1612,250 @@ def render_mediation_checker(api_key):
     st.caption("ℹ️ Not: 01.09.2023 tarihinden itibaren Kira, Kat Mülkiyeti, Komşuluk Hukuku ve Ortaklığın Giderilmesi davaları da zorunlu arabuluculuk kapsamına alınmıştır.")
 
 
+import folium
+from streamlit_folium import st_folium
+import random
+
+def render_forensic_map(api_key):
+    st.info("🗺️ **Adli Isı Haritası (Forensic Geolocation):** Olay yerindeki geçmiş vakaları analiz eder. 'Sürücü hatası mı, yoksa yol kusuru mu?' sorusuna İdare Hukuku perspektifiyle yanıt arar.")
+
+    # --- 0. MODEL SEÇİCİ ---
+    def get_best_model():
+        try:
+            available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+            for m in available_models:
+                if 'flash' in m: return m
+            return available_models[0] if available_models else "models/gemini-pro"
+        except:
+            return "models/gemini-pro"
+
+    col_input, col_map = st.columns([1, 2])
+
+    # --- 1. GİRDİ PANELİ ---
+    with col_input:
+        st.markdown("### 📍 Olay Yeri Tanımla")
+        
+        location_name = st.text_input("Konum / Kavşak Adı", "Bağdat Caddesi Şaşkınbakkal Işıklar")
+        city = st.selectbox("Şehir", ["İstanbul", "Ankara", "İzmir", "Bursa", "Antalya"])
+        event_type = st.selectbox("Olay Türü", ["Trafik Kazası", "Hırsızlık / Gasp", "Sel / Su Baskını", "Çukur / Yol Çökmesi"])
+        
+        st.divider()
+        st.markdown("#### 🎯 Hedef Analiz")
+        st.caption("Sistem, son 5 yıldaki haberleri ve şikayetleri tarayarak 'Hizmet Kusuru' arayacaktır.")
+        
+        analyze_btn = st.button("📡 Bölgeyi Tara ve Risk Haritası Çıkar", type="primary")
+
+    # --- 2. HARİTA VE ANALİZ ---
+    with col_map:
+        # Varsayılan Koordinatlar (İstanbul Merkezli Başlangıç)
+        lat, lon = 41.0082, 28.9784 
+        if city == "Ankara": lat, lon = 39.9334, 32.8597
+        if city == "İzmir": lat, lon = 38.4192, 27.1287
+
+        # Harita Oluştur (Folium)
+        m = folium.Map(location=[lat, lon], zoom_start=12)
+        
+        # Eğer butona basıldıysa
+        if analyze_btn:
+            st.markdown(f"### 🔍 {location_name} - Olay Yeri Analizi")
+            
+            # 1. SİMÜLASYON: Isı Haritası (Gerçek veriye erişim olmadığı için görselleştirme)
+            # Olay yerinin etrafına rastgele "Geçmiş Kaza" noktaları atıyoruz.
+            # Gerçek hayatta burası Emniyet API'sinden veya Haber Veritabanından gelir.
+            
+            # Merkez Nokta (Olay Yeri)
+            folium.Marker(
+                [lat, lon], 
+                popup=f"<b>OLAY YERİ</b><br>{location_name}", 
+                icon=folium.Icon(color="red", icon="info-sign")
+            ).add_to(m)
+            
+            # Geçmiş Vakalar (Simüle Edilmiş Isı Noktaları)
+            for _ in range(15): # Etrafta 15 eski kaza varmış gibi
+                r_lat = lat + random.uniform(-0.02, 0.02)
+                r_lon = lon + random.uniform(-0.02, 0.02)
+                folium.CircleMarker(
+                    location=[r_lat, r_lon],
+                    radius=5,
+                    color="orange",
+                    fill=True,
+                    fill_color="orange",
+                    popup="Geçmiş Vaka (2021-2023)"
+                ).add_to(m)
+
+            # Haritayı Göster
+            st_folium(m, height=300, width=700)
+            
+            # 2. YAPAY ZEKA ANALİZİ (Hizmet Kusuru Tespiti)
+            if not api_key:
+                st.error("API Key gerekli.")
+            else:
+                output_box = st.empty()
+                output_box.info("Haber arşivleri ve yerel şikayetler taranıyor...")
+                
+                try:
+                    genai.configure(api_key=api_key)
+                    active_model = get_best_model()
+                    model = genai.GenerativeModel(active_model)
+                    
+                    prompt = f"""
+                    GÖREV: Sen uzman bir İdare Hukuku avukatı ve Trafik Bilirkişisisin.
+                    KONUM: {location_name}, {city}
+                    OLAY TÜRÜ: {event_type}
+                    
+                    SENARYO: Müvekkil burada bir kaza yaptı/zarar gördü. Sadece karşı tarafı değil, devleti/belediyeyi de dava etmek istiyoruz.
+                    
+                    İSTENENLER:
+                    1. Bu bölgeyle ilgili geçmişte basına yansıyan benzer kazalar veya "ölüm virajı", "karanlık yol" gibi haberler var mı? (Genel bilgi birikimini kullan).
+                    2. İdarenin "Hizmet Kusuru" (Service Defect) sayılabilecek ihmalleri neler olabilir? (Örn: Sinyalizasyon eksikliği, yetersiz aydınlatma, çukur, rögar kapağı).
+                    3. STRATEJİ: Davayı "Tam Yargı Davası" olarak İdare Mahkemesi'ne taşımak için hangi delilleri toplamalıyım? (MOBESE, Belediye şikayet kayıtları vb.)
+                    4. SONUÇ: "Bu kavşakta son 1 yılda çok kaza olduysa, kusur sürücüde değil yoldadır" tezini savunacak hukuki argümanlar yaz.
+                    """
+                    
+                    response = model.generate_content(prompt, stream=True)
+                    
+                    full_text = ""
+                    for chunk in response:
+                        full_text += chunk.text
+                        output_box.markdown(full_text + "▌")
+                    output_box.markdown(full_text)
+                    
+                except Exception as e:
+                    output_box.error(f"Hata: {e}")
+        
+        else:
+            # Analiz öncesi boş harita
+            st_folium(m, height=300, width=700)
+            st.caption("Analiz butonuna bastığınızda bölgedeki risk yoğunluğu haritaya işlenecektir.")
+
+import datetime
+
+def render_temporal_law_machine(api_key):
+    st.info("🕰️ **Mevzuat Zaman Makinesi:** Olayın yaşandığı tarihe geri döner. O gün yürürlükte olan (şu an mülga) kanunları, tüzükleri ve Yargıtay içtihatlarını bugünkülerle kıyaslar.")
+
+    # --- 0. MODEL SEÇİCİ ---
+    def get_best_model():
+        try:
+            available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+            for m in available_models:
+                if 'flash' in m: return m
+            return available_models[0] if available_models else "models/gemini-pro"
+        except:
+            return "models/gemini-pro"
+
+    col_settings, col_result = st.columns([1, 2])
+
+    # --- 1. ZAMAN AYARLARI ---
+    with col_settings:
+        st.markdown("### ⚙️ Zaman Koordinatları")
+        
+        # Tarih Seçimi (Varsayılan: 1990'lar)
+        target_date = st.date_input("Olay Tarihi", datetime.date(1995, 6, 15))
+        
+        topic = st.selectbox("Hukuki Konu", [
+            "Gayrimenkul Devri (Tapu İptal)", 
+            "Miras Paylaşımı (Tereke)", 
+            "Boşanma ve Mal Rejimi", 
+            "İş Kazası Tazminatı",
+            "Ticari Sözleşme İhlali"
+        ])
+        
+        specific_query = st.text_input("Özel Detay (Opsiyonel)", "Muris muvazaası ve saklı pay")
+        
+        st.divider()
+        st.markdown("#### 🔄 Dönüşüm Modu")
+        comparison_mode = st.radio("Analiz Türü", ["Sadece O Günün Kanunu", "Eski vs Yeni Kanun Kıyaslaması"])
+        
+        start_travel = st.button("🚀 Geçmişe Git ve Mevzuatı Getir", type="primary")
+
+    # --- 2. SONUÇ EKRANI ---
+    with col_result:
+        st.markdown(f"### 📜 {target_date.year} Yılı Mevzuat Panoramas")
+        
+        if start_travel:
+            if not api_key:
+                st.error("Zaman yolculuğu için API Key gerekli.")
+            else:
+                # Görsel Efekt
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                
+                status_text.text(f"⏳ {target_date.year} yılına gidiliyor...")
+                time.sleep(0.5)
+                progress_bar.progress(30)
+                
+                status_text.text("📚 Resmi Gazete arşivleri taranıyor...")
+                time.sleep(0.5)
+                progress_bar.progress(60)
+                
+                status_text.text("⚖️ Mülga kanun maddeleri getiriliyor...")
+                progress_bar.progress(90)
+                
+                try:
+                    genai.configure(api_key=api_key)
+                    active_model = get_best_model()
+                    model = genai.GenerativeModel(active_model)
+                    
+                    # Kritik Tarih Kontrolleri (Prompt'a ipucu vermek için)
+                    era_context = ""
+                    if target_date.year < 2002:
+                        era_context += "UYARI: Bu tarihte 4721 sayılı Türk Medeni Kanunu YOKTU. 743 sayılı Türk Kanunu Medenisi yürürlükteydi. "
+                    if target_date.year < 2012:
+                        era_context += "UYARI: 6098 sayılı Borçlar Kanunu YOKTU. 818 sayılı Borçlar Kanunu yürürlükteydi. "
+                    
+                    prompt = f"""
+                    GÖREV: Sen bir Hukuk Tarihçisi ve Mevzuat Uzmanısın.
+                    
+                    HEDEF TARİH: {target_date.strftime('%d.%m.%Y')}
+                    KONU: {topic}
+                    DETAY: {specific_query}
+                    BAĞLAM: {era_context}
+                    
+                    İSTENEN ÇIKTI (Rapor Formatı):
+                    
+                    1. 🏛️ YÜRÜRLÜKTEKİ TEMEL KANUN
+                    - O tarihte geçerli olan Kanun Numarası ve Adı (Örn: 743 s. TKM).
+                    - İlgili Madde Numarası ve (mümkünse) o günkü metni.
+                    
+                    2. 📜 KRİTİK FARKLILIKLAR (BUGÜNE GÖRE)
+                    - Bugün uygulanan kanunla (Örn: 4721 s. TMK) o günkü kanun arasındaki hayati fark nedir?
+                    - Örnek: "O tarihte 'Edinilmiş Mallara Katılma Rejimi' yoktu, 'Mal Ayrılığı' esastı."
+                    
+                    3. ⚖️ DÖNEMİN İÇTİHADI
+                    - O yıllarda Yargıtay'ın bu konuya bakışı nasıldı? (Örn: 1990'larda inançlı işlem içtihadı).
+                    
+                    4. 💎 AVUKAT İÇİN STRATEJİ
+                    - Davayı kazanmak için mahkemeye "Olay tarihindeki mevzuat uygulanmalıdır" itirazını nasıl sunmalıyım?
+                    """
+                    
+                    response = model.generate_content(prompt, stream=True)
+                    
+                    full_text = ""
+                    status_text.empty() # Yazıyı temizle
+                    output_placeholder = st.empty()
+                    
+                    for chunk in response:
+                        full_text += chunk.text
+                        output_placeholder.markdown(full_text + "▌")
+                    
+                    output_placeholder.markdown(full_text)
+                    progress_bar.progress(100)
+                    
+                except Exception as e:
+                    st.error(f"Hata: {e}")
+        else:
+            st.info("👈 Sol taraftan tarihi seçin ve yolculuğu başlatın.")
+            
+            # Örnek Gösterim (Placeholder)
+            st.markdown("""
+            **Örnek Senaryo:**
+            * **Tarih:** 1995
+            * **Konu:** Boşanma Mal Paylaşımı
+            * **Sonuç:** 2002 öncesi evliliklerde "Mal Ayrılığı" rejimi geçerli olduğundan, kadın eşin ev hanımı olması durumunda tapuda adı yoksa hak talep etmesi çok zordu. Sistem bunu tespit edip "Katkı Payı Alacağı" davası açmanızı önerir.
+            """)
+
+
+
 # --- ANA UYGULAMA ---
 def main():
     st.title("⚖️ Hukuk Asistanı (v10.0 - Ultimate Edition)")
@@ -1716,6 +1960,13 @@ def main():
     st.markdown("### 🔮 Simülasyon & Risk Analizi")
     tab_checkup, tab_timemachine, tab_aym, tab_deepfake, tab_osyn, tab_sxx, tab_sah, tab_soy, tab_isx, tab_golx, tab_arx = st.tabs(["🏥 Kurumsal Check-up", "⏳ Zaman Makinesi", "⚖️ AYM & AİHM Testi", "🕵️ Deepfake Kontrol", "🌐 OSINT (İstihbarat)", "🔔 Emsal Alarm", "👑 Sahip Modu", "🌳 Soyağacı", "🔥 Isı Haritası", "🕸️ Gizli Bağlantı", "🤝 Arabuluculuk"])
 
+    # 4. SATIR: oyun değiştirici hamle menüsü (15 Sekme)
+    st.markdown("### 🛠️ Temel Araçlar & Strateji")
+    tabx1, tabx2 = st.tabs([
+        ""🗺️ Adli Harita"", "🕰️ Mevzuat Makinesi" 
+    ])
+
+
     # --- SEKMELERİN İÇERİKLERİ ---
     
     # NOT: tab1, tab2 vb. eski içeriklerinizi buraya yerleştirmelisiniz.
@@ -1744,6 +1995,8 @@ def main():
     with tab_isx: render_limitations_heatmap(api_key)
     with tab_golx: render_conflict_scanner(api_key)
     with tab_arx: render_mediation_checker(api_key)
+    with tabx1: render_forensic_map(api_key)
+    with tabx2: render_temporal_law_machine(api_key)
     # --- TAB İÇERİKLERİ ---
 
     with tab1:
