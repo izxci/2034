@@ -2485,7 +2485,7 @@ def render_forensic_map_module(api_key):
 import math
 
 def calculate_sun_position(latitude, longitude):
-	import datetime as dtfx
+    import datetime as dtfx
     """
     Basitleştirilmiş NOAA Algoritması ile Güneş Yüksekliğini (Elevation) hesaplar.
     Dış kütüphane gerektirmez.
