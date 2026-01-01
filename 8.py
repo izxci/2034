@@ -2414,6 +2414,106 @@ def render_cost_calculator_module(api_key):
                 
                 st.download_button("📩 Raporu İndir (Word)", create_word_file(aciklama + f"\n\nTOPLAM: {toplam_ilk_masraf} TL"), "2026_Maliyet_Raporu.docx")
 
+def render_forensic_mapx_module(api_key):
+    st.header("🗺️ Adli Olay Yeri ve Kaza Rekonstrüksiyonu")
+    st.info("Trafik ve iş kazalarında kusur analizi ve olay yeri canlandırması yapar.")
+
+    # --- GİRDİLER ---
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        st.subheader("📋 Kaza Verileri")
+        kaza_tipi = st.selectbox("Kaza Tipi", ["Trafik Kazası (Araç-Araç)", "Trafik Kazası (Araç-Yaya)", "İş Kazası (Düşme/Çarpma)"])
+        
+        arac_hizi = st.number_input("Araç Hızı (km/s)", value=90, step=5)
+        fren_izi = st.number_input("Fren İzi Uzunluğu (metre)", value=35.0, step=1.0)
+        yol_durumu = st.selectbox("Yol Durumu", ["Kuru Asfalt (0.8)", "Islak Asfalt (0.5)", "Buzlu Yol (0.2)", "Toprak Yol (0.6)"])
+        
+        # Sürtünme Katsayısı Belirleme
+        katsayilar = {"Kuru Asfalt (0.8)": 0.8, "Islak Asfalt (0.5)": 0.5, "Buzlu Yol (0.2)": 0.2, "Toprak Yol (0.6)": 0.6}
+        mu = katsayilar[yol_durumu]
+
+    with col2:
+        st.subheader("📍 Olay Yeri Krokisi (Simülasyon)")
+        
+        # --- FİZİK MOTORU ---
+        # Formül: V = sqrt(2 * mu * g * d) * 3.6 (m/s -> km/s dönüşümü)
+        # V: Hız, mu: Sürtünme, g: Yerçekimi (9.81), d: Fren mesafesi
+        
+        tahmini_hiz = (2 * mu * 9.81 * fren_izi)**0.5 * 3.6
+        
+        # Reaksiyon Mesafesi (Sürücü frene basana kadar geçen yol)
+        # Ortalama reaksiyon süresi: 1 saniye
+        reaksiyon_mesafesi = (arac_hizi / 3.6) * 1.0 
+        durma_mesafesi = reaksiyon_mesafesi + fren_izi
+        
+        # Grafik Çizimi (Plotly)
+        fig = go.Figure()
+        
+        # Yol Çizgileri
+        fig.add_shape(type="rect", x0=0, y0=0, x1=durma_mesafesi + 20, y1=10, fillcolor="gray", opacity=0.3, line_width=0)
+        fig.add_shape(type="line", x0=0, y0=5, x1=durma_mesafesi + 20, y1=5, line=dict(color="white", width=3, dash="dash"))
+        
+        # Araç (Başlangıç)
+        fig.add_trace(go.Scatter(x=[0], y=[2.5], mode='markers+text', marker=dict(size=20, symbol="car", color="blue"), text=["Fren Başlangıcı"], textposition="top center"))
+        
+        # Araç (Bitiş)
+        fig.add_trace(go.Scatter(x=[fren_izi], y=[2.5], mode='markers+text', marker=dict(size=20, symbol="x", color="red"), text=["Çarpma/Durma"], textposition="top center"))
+        
+        # Fren İzi Çizgisi
+        fig.add_trace(go.Scatter(x=[0, fren_izi], y=[2.5, 2.5], mode='lines', line=dict(color='black', width=4), name='Fren İzi'))
+        
+        fig.update_layout(
+            title="Kaza Krokisi (Kuşbakışı)",
+            xaxis_title="Mesafe (metre)",
+            yaxis_title="",
+            yaxis=dict(showticklabels=False, range=[-2, 12]),
+            xaxis=dict(range=[-5, durma_mesafesi + 10]),
+            height=300,
+            margin=dict(l=20, r=20, t=40, b=20),
+            showlegend=False
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    # --- ANALİZ SONUCU ---
+    st.divider()
+    col_res1, col_res2 = st.columns(2)
+    
+    with col_res1:
+        st.markdown("### 🔬 Fiziksel Analiz Raporu")
+        st.write(f"**Beyan Edilen Hız:** {arac_hizi} km/s")
+        st.write(f"**Fren İzinden Hesaplanan Hız:** {tahmini_hiz:.2f} km/s")
+        
+        delta = tahmini_hiz - arac_hizi
+        if delta > 10:
+            st.error(f"⚠️ DİKKAT: Araç beyan edilenden **{delta:.1f} km/s daha hızlı** gitmiş olabilir! Fren izleri bunu gösteriyor.")
+        elif delta < -10:
+            st.warning("ℹ️ Araç beyan edilenden daha yavaş olabilir veya fren sistemi tam verimli çalışmamış.")
+        else:
+            st.success("✅ Beyan edilen hız ile fiziksel bulgular uyumlu.")
+
+    with col_res2:
+        st.markdown("### ⚖️ Kusur & Bilirkişi Yorumu (AI)")
+        if st.button("🤖 AI Bilirkişi Görüşü Al") and api_key:
+            with st.spinner("Olay yeri verileri analiz ediliyor..."):
+                prompt = f"""
+                GÖREV: Trafik kazası bilirkişisi gibi davran.
+                VERİLER:
+                - Kaza Tipi: {kaza_tipi}
+                - Yol Durumu: {yol_durumu}
+                - Fren İzi: {fren_izi} metre
+                - Sürücü Beyanı Hız: {arac_hizi} km/s
+                - Fiziksel Hesaplanan Hız: {tahmini_hiz:.2f} km/s
+                
+                ANALİZ İSTEĞİ:
+                1. Sürücünün "Hızın Gerekli Şartlara Uygunluğu" kuralını ihlal edip etmediğini değerlendir (KTK 52/1-b).
+                2. Fren izi uzunluğu, sürücünün tehlikeyi geç fark ettiğini gösteriyor mu?
+                3. Bu verilerle "Asli Kusur" mu yoksa "Tali Kusur" mu verilmesi muhtemel?
+                
+                Kısa, teknik ve net bir paragraf yaz.
+                """
+                yorum = get_ai_response(prompt, api_key)
+                st.info(yorum)
 
 
 # --- ANA UYGULAMA ---
@@ -2522,8 +2622,8 @@ def main():
 
     # 4. SATIR: oyun değiştirici hamle menüsü (15 Sekme)
     st.markdown("### 🛠️ Temel Araçlar & Strateji")
-    tabx1, tabx2, tabx3, tabx4, tabx5 = st.tabs([
-        "🗺️ Adli Harita", "🕰️ Mevzuat Makinesi", "🧐 Rapor Denetçisi", "🏛️ Kurumsal Hafıza", "💰 Dava Maliyeti" 
+    tabx1, tabx2, tabx3, tabx4, tabx5, tab6x = st.tabs([
+        "🗺️ Adli Harita", "🕰️ Mevzuat Makinesi", "🧐 Rapor Denetçisi", "🏛️ Kurumsal Hafıza", "💰 Dava Maliyeti", "🗺️ Adli Olay Yeri" 
     ])
 
 
@@ -2560,6 +2660,7 @@ def main():
     with tabx3: render_expert_report_auditor(api_key)
     with tabx4: render_corporate_memory(api_key)
     with tabx5: render_cost_calculator_module(api_key)
+    with tabx6: render_forensic_mapx_module(api_key)
     # --- TAB İÇERİKLERİ ---
 
     with tab1:
