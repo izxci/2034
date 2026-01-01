@@ -1240,6 +1240,158 @@ def render_property_genealogy(api_key):
         else:
             st.info("👈 Veri yok.")
 
+import pandas as pd
+from datetime import datetime, timedelta
+
+def render_limitations_heatmap(api_key):
+    st.info("🔥 **Zamanaşımı Isı Haritası:** Dava türüne ve tarihlere göre her bir alacak kaleminin risk durumunu analiz eder. Islah ve hak düşürücü süreleri 'Borsa Ekranı' gibi takip eder.")
+
+    # --- 0. OTOMATİK MODEL SEÇİCİ ---
+    def get_best_model():
+        try:
+            available_models = []
+            for m in genai.list_models():
+                if 'generateContent' in m.supported_generation_methods:
+                    available_models.append(m.name)
+            for m in available_models:
+                if 'flash' in m: return m
+            for m in available_models:
+                if 'pro' in m: return m
+            return available_models[0] if available_models else "models/gemini-pro"
+        except:
+            return "models/gemini-pro"
+
+    # --- 1. GİRİŞ PANELİ ---
+    col_input, col_dashboard = st.columns([1, 2])
+
+    with col_input:
+        st.markdown("### 📅 Kritik Tarihler")
+        
+        dava_turu = st.selectbox("Dava Türü", ["İş Hukuku (İşçi Alacağı)", "Ticari Alacak", "Tüketici", "Tazminat (Haksız Fiil)"])
+        
+        bugun = datetime.now().date()
+        
+        # Tarih Seçiciler
+        fesih_tarihi = st.date_input("Fesih / Olay Tarihi", value=bugun - timedelta(days=365*4))
+        dava_tarihi = st.date_input("Dava Açılış Tarihi", value=bugun - timedelta(days=300))
+        
+        st.divider()
+        st.markdown("#### ⚡ Islah Alarmı")
+        is_bilirkişi = st.checkbox("Bilirkişi Raporu Geldi mi?")
+        
+        teblig_tarihi = None
+        if is_bilirkişi:
+            teblig_tarihi = st.date_input("Rapor Tebliğ Tarihi", value=bugun - timedelta(days=5))
+            st.caption("Islah için genellikle 2 haftalık itiraz süresi veya tahkikat sonuna kadar süre dikkate alınır.")
+
+    # --- 2. HESAPLAMA MOTORU ---
+    data = []
+    
+    # İş Hukuku Kuralları (Basitleştirilmiş Örnekler)
+    if dava_turu == "İş Hukuku (İşçi Alacağı)":
+        # 1. Kıdem Tazminatı (5 Yıl - 2017 sonrası)
+        kidem_suresi = fesih_tarihi + timedelta(days=365*5)
+        kalan_gun = (kidem_suresi - bugun).days
+        data.append({"Kalem": "Kıdem Tazminatı", "Son Tarih": kidem_suresi, "Kalan Gün": kalan_gun, "Risk": ""})
+        
+        # 2. Fazla Mesai (5 Yıl)
+        mesai_suresi = fesih_tarihi + timedelta(days=365*5)
+        kalan_gun_mesai = (mesai_suresi - bugun).days
+        data.append({"Kalem": "Fazla Mesai", "Son Tarih": mesai_suresi, "Kalan Gün": kalan_gun_mesai, "Risk": ""})
+        
+        # 3. İşe İade (1 Ay - Arabulucu)
+        ise_iade_suresi = fesih_tarihi + timedelta(days=30)
+        kalan_gun_iade = (ise_iade_suresi - bugun).days
+        data.append({"Kalem": "İşe İade (Arabulucu)", "Son Tarih": ise_iade_suresi, "Kalan Gün": kalan_gun_iade, "Risk": ""})
+
+    # Islah Hesabı (Kritik)
+    if is_bilirkişi and teblig_tarihi:
+        # HMK 281 - 2 Hafta İtiraz (Islah için stratejik zaman)
+        islah_suresi = teblig_tarihi + timedelta(days=14)
+        kalan_gun_islah = (islah_suresi - bugun).days
+        data.append({"Kalem": "🚨 ISLAH / İTİRAZ", "Son Tarih": islah_suresi, "Kalan Gün": kalan_gun_islah, "Risk": "ÇOK YÜKSEK"})
+
+    # DataFrame Oluştur
+    df = pd.DataFrame(data)
+
+    # Risk Renklendirme Fonksiyonu
+    def risk_color(val):
+        if val < 0: return "background-color: #ff4b4b; color: white" # Kırmızı (Süre Doldu)
+        elif val < 15: return "background-color: #ffa500; color: black" # Turuncu (Kritik)
+        elif val < 60: return "background-color: #ffe066; color: black" # Sarı (Yaklaşıyor)
+        else: return "background-color: #90ee90; color: black" # Yeşil (Güvenli)
+
+    # --- 3. DASHBOARD (ISI HARİTASI) ---
+    with col_dashboard:
+        st.markdown("### 🌡️ Zamanaşımı Isı Haritası")
+        
+        if not df.empty:
+            # Tabloyu Renklendir
+            st.dataframe(
+                df.style.applymap(risk_color, subset=["Kalan Gün"])
+                        .format({"Son Tarih": "{:%d.%m.%Y}"}),
+                use_container_width=True,
+                height=250
+            )
+            
+            # Görsel Ticker (İlerleme Çubukları)
+            st.markdown("#### ⏳ Kritik Geri Sayım")
+            for index, row in df.iterrows():
+                kalan = row["Kalan Gün"]
+                kalem = row["Kalem"]
+                
+                if kalan < 0:
+                    st.error(f"❌ {kalem}: SÜRE DOLDU! ({abs(kalan)} gün geçti)")
+                elif kalan < 15:
+                    st.warning(f"⚠️ {kalem}: SON {kalan} GÜN! (Acil İşlem Gerekli)")
+                    st.progress(max(0, min(100, int((kalan/15)*100))))
+                else:
+                    st.success(f"✅ {kalem}: {kalan} gün var. (Güvenli)")
+        else:
+            st.info("Lütfen sol taraftan tarihleri giriniz.")
+
+        st.divider()
+        
+        # --- 4. AI STRATEJİ DANIŞMANI ---
+        if st.button("🧠 AI Risk & Strateji Analizi Yap"):
+            if not api_key:
+                st.error("API Key gerekli.")
+            else:
+                output_box = st.empty()
+                output_box.info("Veriler analiz ediliyor...")
+                
+                try:
+                    genai.configure(api_key=api_key)
+                    active_model = get_best_model()
+                    model = genai.GenerativeModel(active_model)
+                    
+                    prompt = f"""
+                    GÖREV: Bir avukat için zamanaşımı risk analizi yap.
+                    
+                    DURUM:
+                    - Dava Türü: {dava_turu}
+                    - Fesih Tarihi: {fesih_tarihi}
+                    - Bugün: {bugun}
+                    - Tablo Verileri: {df.to_json(orient='records', date_format='iso')}
+                    
+                    İSTENENLER:
+                    1. Hangi kalemlerde zamanaşımı riski var? (Kısa ve net)
+                    2. Islah dilekçesi için ne kadar vaktim kaldı? Geç kalırsam ne olur?
+                    3. Zamanaşımı def'i (savunması) ile karşılaşırsam ne yapmalıyım?
+                    4. Faiz başlangıç tarihleri için stratejik bir öneri ver.
+                    """
+                    
+                    response = model.generate_content(prompt, stream=True)
+                    
+                    full_text = ""
+                    for chunk in response:
+                        full_text += chunk.text
+                        output_box.markdown(full_text + "▌")
+                    output_box.markdown(full_text)
+                    
+                except Exception as e:
+                    output_box.error(f"Hata: {e}")
+
 
 
 # --- ANA UYGULAMA ---
@@ -1344,7 +1496,7 @@ def main():
 
     # 3. SATIR: Simülasyon ve İleri Düzey Risk (YENİ EKLENDİ)
     st.markdown("### 🔮 Simülasyon & Risk Analizi")
-    tab_checkup, tab_timemachine, tab_aym, tab_deepfake, tab_osyn, tab_sxx, tab_sah, tab_soy = st.tabs(["🏥 Kurumsal Check-up", "⏳ Zaman Makinesi", "⚖️ AYM & AİHM Testi", "🕵️ Deepfake Kontrol", "🌐 OSINT (İstihbarat)", "🔔 Emsal Alarm", "👑 Sahip Modu", "🌳 Soyağacı"])
+    tab_checkup, tab_timemachine, tab_aym, tab_deepfake, tab_osyn, tab_sxx, tab_sah, tab_soy, tab_isx = st.tabs(["🏥 Kurumsal Check-up", "⏳ Zaman Makinesi", "⚖️ AYM & AİHM Testi", "🕵️ Deepfake Kontrol", "🌐 OSINT (İstihbarat)", "🔔 Emsal Alarm", "👑 Sahip Modu", "🌳 Soyağacı", "🔥 Isı Haritası"])
 
     # --- SEKMELERİN İÇERİKLERİ ---
     
@@ -1371,7 +1523,7 @@ def main():
     with tab_sxx: render_precedent_alert_module(api_key)
     with tab_sah: render_owner_mode(api_key)
     with tab_soy: render_property_genealogy(api_key)
-
+    with tab_isx: render_limitations_heatmap(api_key)
     # --- TAB İÇERİKLERİ ---
 
     with tab1:
