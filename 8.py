@@ -838,6 +838,104 @@ def render_osint_module(api_key):
                         response = model.generate_content(prompt)
                         st.write(response.text)
 
+def render_precedent_alert_module(api_key):
+    st.info("Bu modül, derdest (devam eden) davalarınızı takip eder ve Yargıtay/AYM tarafından yayınlanan **'Bugünkü Kararlar'** ile otomatik eşleştirir. Sizi etkileyen bir karar çıktığında alarm verir.")
+
+    # --- 1. OTURUM DURUMU (Dava Portföyü) ---
+    if 'my_cases' not in st.session_state:
+        st.session_state.my_cases = [
+            {"id": 1, "ad": "Yılmaz v. Demir (Kira)", "konu": "5 yıllık kiracı tahliyesi, uyarlama davası", "durum": "Bilirkişi aşamasında"},
+            {"id": 2, "ad": "Kripto Dolandırıcılık", "konu": "Thodex benzeri borsa batışı, güveni kötüye kullanma", "durum": "Savcılık soruşturması"},
+            {"id": 3, "ad": "İşe İade (Ahmet B.)", "konu": "Performans düşüklüğü nedeniyle fesih", "durum": "Tanık dinleniyor"}
+        ]
+
+    col_portfolio, col_feed = st.columns([1, 2])
+
+    # --- SOL KOLON: DAVA PORTFÖYÜM ---
+    with col_portfolio:
+        st.markdown("### 📂 Dava Portföyüm")
+        
+        # Yeni Dava Ekleme Alanı
+        with st.expander("➕ Yeni Dava Ekle"):
+            new_case_name = st.text_input("Dava Adı")
+            new_case_topic = st.text_area("Dava Konusu/Detayı")
+            if st.button("Listeye Ekle"):
+                new_id = len(st.session_state.my_cases) + 1
+                st.session_state.my_cases.append({"id": new_id, "ad": new_case_name, "konu": new_case_topic, "durum": "Yeni"})
+                st.success("Eklendi!")
+                st.rerun()
+        
+        # Mevcut Davaları Listele
+        for case in st.session_state.my_cases:
+            st.markdown(f"""
+            **Dosya #{case['id']}: {case['ad']}**  
+            *{case['konu']}*  
+            `Durum: {case['durum']}`
+            ---
+            """)
+
+    # --- SAĞ KOLON: GÜNLÜK BÜLTEN TARAMASI ---
+    with col_feed:
+        st.markdown("### 📡 Günlük Yargı Bülteni & Etki Analizi")
+        
+        if st.button("🔄 Bülteni Tara ve Analiz Et", type="primary", use_container_width=True):
+            if not api_key:
+                st.error("API Anahtarı gerekli.")
+            else:
+                # SİMÜLASYON: Sanki Yargıtay/AYM sitesinden bu sabah düşen kararlar çekilmiş gibi
+                daily_decisions = [
+                    """KARAR 2024/105 (Yargıtay HGK): Kira tespit davalarında '5 yıllık süre' dolmadan yapılan uyarlamalarda, TÜFE oranı tavan olarak kabul edilemez. Hakim hakkaniyete göre serbestçe belirler.""",
+                    """KARAR 2024/88 (AYM Bireysel Başvuru): Kripto para borsalarındaki kayıplarda, devletin denetim yükümlülüğünü ihlal ettiği iddiasıyla yapılan başvuruda 'Mülkiyet Hakkı İhlali' olmadığına karar verildi.""",
+                    """KARAR 2024/12 (İş Mahkemesi Emsal): Sadece performans düşüklüğü, yazılı savunma alınmadan ve eğitim verilmeden fesih sebebi yapılamaz."""
+                ]
+                
+                st.write(f"📅 **Bugün Yayınlanan Kritik Karar Sayısı:** {len(daily_decisions)}")
+                
+                with st.spinner("Yapay Zeka, yeni kararları davalarınızla çapraz sorguluyor..."):
+                    genai.configure(api_key=api_key)
+                    model = genai.GenerativeModel('gemini-1.5-flash')
+                    
+                    # Tüm davaları ve yeni kararları tek bir promptta birleştiriyoruz
+                    cases_str = str(st.session_state.my_cases)
+                    decisions_str = "\n".join(daily_decisions)
+                    
+                    prompt = f"""
+                    GÖREV: Sen proaktif bir hukuk asistanısın.
+                    
+                    1. AŞAĞIDAKİ MÜVEKKİL DAVALARI (PORTFÖY):
+                    {cases_str}
+                    
+                    2. AŞAĞIDAKİ BUGÜN ÇIKAN YENİ YARGI KARARLARI:
+                    {decisions_str}
+                    
+                    YAPMAN GEREKEN:
+                    Her bir davayı kontrol et. Eğer yeni kararlardan biri, mevcut bir davayı OLUMLU veya OLUMSUZ etkiliyorsa uyar.
+                    
+                    ÇIKTI FORMATI (Sadece etkilenenleri yaz):
+                    UYARI: [Dosya Adı]
+                    DURUM: [KRİTİK / DİKKAT / FIRSAT]
+                    NEDEN: [Yeni kararın etkisi ne?]
+                    AKSİYON: [Avukat hemen ne yapmalı? Örn: Ek beyan sun, davayı ıslah et]
+                    """
+                    
+                    response = model.generate_content(prompt)
+                    
+                    # Sonuçları Ayrıştır ve Göster
+                    st.divider()
+                    st.markdown("### 🚨 Tespit Edilen Riskler ve Fırsatlar")
+                    
+                    # AI Cevabını daha şık göstermek için
+                    alerts = response.text.split("UYARI:")
+                    for alert in alerts:
+                        if alert.strip():
+                            # Renklendirme mantığı
+                            if "KRİTİK" in alert:
+                                st.error(f"**UYARI:{alert}**")
+                            elif "FIRSAT" in alert:
+                                st.success(f"**UYARI:{alert}**")
+                            else:
+                                st.warning(f"**UYARI:{alert}**")
+
 
 # --- ANA UYGULAMA ---
 def main():
@@ -941,7 +1039,7 @@ def main():
 
     # 3. SATIR: Simülasyon ve İleri Düzey Risk (YENİ EKLENDİ)
     st.markdown("### 🔮 Simülasyon & Risk Analizi")
-    tab_checkup, tab_timemachine, tab_aym, tab_deepfake, tab_osyn = st.tabs(["🏥 Kurumsal Check-up", "⏳ Zaman Makinesi", "⚖️ AYM & AİHM Testi", "🕵️ Deepfake Kontrol", "🌐 OSINT (İstihbarat)"])
+    tab_checkup, tab_timemachine, tab_aym, tab_deepfake, tab_osyn, tab_sxx = st.tabs(["🏥 Kurumsal Check-up", "⏳ Zaman Makinesi", "⚖️ AYM & AİHM Testi", "🕵️ Deepfake Kontrol", "🌐 OSINT (İstihbarat)", "🔔 Emsal Alarm"])
 
     # --- SEKMELERİN İÇERİKLERİ ---
     
@@ -964,7 +1062,8 @@ def main():
 
     with tab_osyn:
         render_osint_module(api_key) # <--- YENİ FONKSİYON ÇAĞRISI
-        
+
+    with tab_sxx: render_precedent_alert_module(api_key)        
 
     # --- TAB İÇERİKLERİ ---
 
