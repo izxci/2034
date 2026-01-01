@@ -107,6 +107,158 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
+# --- 2. ANA FONKSİYON VE MENÜ YAPISI ---
+
+def main():
+    # --- A. Sidebar (Sol Panel) ---
+    with st.sidebar:
+        st.image("https://cdn-icons-png.flaticon.com/512/2666/2666505.png", width=80)
+        st.title("Hukuk Asistanı AI")
+        st.caption("v4.0 - Profesyonel Sürüm")
+        
+        st.markdown("---")
+        
+        # API Anahtarı Girişi (Her zaman görünür)
+        api_key = st.text_input("🔑 Google Gemini API Key", type="password", help="Analizler için gereklidir.")
+        
+        if not api_key:
+            st.warning("⚠️ Lütfen API Anahtarı giriniz.")
+        
+        st.markdown("---")
+        
+        # NAVİGASYON MENÜSÜ
+        # Kullanıcı buradan seçim yapmadan sağ taraf yüklenmez
+        selected_page = st.radio(
+            "📍 MENÜ",
+            options=[
+                "🏠 Ana Sayfa",
+                "📂 Belge & OCR İşlemleri",
+                "⚖️ Mevzuat & İçtihat",
+                "🔍 Hukuki Analiz Araçları",
+                "🕵️ İstihbarat & OSINT",
+                "🏛️ Kurumsal Hafıza & Arşiv",
+                "⚙️ Ayarlar & Yardım"
+            ],
+            index=0
+        )
+        
+        st.markdown("---")
+        st.info("💡 **İpucu:** Menüden işlem seçtiğinizde ilgili modül yüklenecektir.")
+
+    # --- B. Ana Ekran Yönlendirmesi ---
+    
+    # 1. ANA SAYFA (Dashboard)
+    if selected_page == "🏠 Ana Sayfa":
+        st.title("👋 Hoş Geldiniz, Sayın Meslektaşım")
+        st.markdown("Hukuk pratiğinizi hızlandırmak için sol menüden bir araç seçin.")
+        
+        # İstatistik veya Hızlı Erişim Kartları
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.markdown("""
+            <div class="dashboard-card" style="border-left-color: #10b981;">
+                <h3>📂 Belge Analizi</h3>
+                <p>PDF, UDF ve Resim dosyalarını saniyeler içinde tarayın ve özetleyin.</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown("""
+            <div class="dashboard-card" style="border-left-color: #f59e0b;">
+                <h3>⚖️ Emsal Tarama</h3>
+                <p>Yargıtay ve AYM kararlarını yapay zeka ile analiz edin.</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+        with col3:
+            st.markdown("""
+            <div class="dashboard-card" style="border-left-color: #6366f1;">
+                <h3>🕵️ Risk Analizi</h3>
+                <p>Sözleşme ve tapu kayıtlarındaki gizli riskleri tespit edin.</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.divider()
+        st.caption("Sistem Durumu: 🟢 Hazır | API Bağlantısı: " + ("✅ Bağlı" if api_key else "❌ Bekleniyor"))
+
+    # 2. BELGE & OCR İŞLEMLERİ
+    elif selected_page == "📂 Belge & OCR İşlemleri":
+        st.header("📂 Belge Yönetimi ve OCR")
+        tab_docs = st.tabs(["📄 Belge Özetle", "🗣️ Ses/Metin Çeviri", "🧐 Rapor Denetçisi"])
+        
+        with tab_docs[0]:
+            # Buraya render_document_summarizer(api_key) gelecek
+            # Örnek:
+            if 'render_document_summarizer' in globals(): render_document_summarizer(api_key)
+            else: st.warning("Modül yüklenemedi.")
+            
+        with tab_docs[1]:
+            # Ses modülü
+            st.info("Ses kayıtlarını metne dökün veya metinleri okutun.")
+            # render_audio_module(api_key) çağrısı buraya
+            
+        with tab_docs[2]:
+            if 'render_expert_report_auditor' in globals(): render_expert_report_auditor(api_key)
+
+    # 3. MEVZUAT & İÇTİHAT
+    elif selected_page == "⚖️ Mevzuat & İçtihat":
+        st.header("⚖️ Mevzuat ve İçtihat Araştırması")
+        tab_law = st.tabs(["🕰️ Mevzuat Makinesi", "🔔 Emsal Alarm", "⚖️ AYM Testi"])
+        
+        with tab_law[0]:
+            if 'render_temporal_law_machine' in globals(): render_temporal_law_machine(api_key)
+        with tab_law[1]:
+            if 'render_precedent_alert_module' in globals(): render_precedent_alert_module(api_key)
+        with tab_law[2]:
+            if 'render_aym_aihm_module' in globals(): render_aym_aihm_module(api_key)
+
+    # 4. HUKUKİ ANALİZ ARAÇLARI
+    elif selected_page == "🔍 Hukuki Analiz Araçları":
+        st.header("🔍 Detaylı Analiz Araçları")
+        sub_menu = st.selectbox("Aracı Seçin:", 
+            ["🏥 Hukuki Check-up", "⏳ Zaman Aşımı Hesapla", "🤝 Arabuluculuk Analizi", "🕸️ Çelişki Tarayıcı"])
+        
+        if sub_menu == "🏥 Hukuki Check-up":
+            if 'render_checkup_module' in globals(): render_checkup_module(api_key)
+        elif sub_menu == "⏳ Zaman Aşımı Hesapla":
+            if 'render_time_machine' in globals(): render_time_machine(api_key)
+        elif sub_menu == "🤝 Arabuluculuk Analizi":
+            if 'render_mediation_checker' in globals(): render_mediation_checker(api_key)
+        elif sub_menu == "🕸️ Çelişki Tarayıcı":
+            if 'render_conflict_scanner' in globals(): render_conflict_scanner(api_key)
+
+    # 5. İSTİHBARAT & OSINT
+    elif selected_page == "🕵️ İstihbarat & OSINT":
+        st.header("🕵️ İstihbarat ve Konum Analizi")
+        tab_intel = st.tabs(["🌐 OSINT Tarama", "🔥 Adli Isı Haritası", "🌳 Soyağacı/Miras", "👑 Sahip Modu"])
+        
+        with tab_intel[0]:
+            if 'render_osint_module' in globals(): render_osint_module(api_key)
+        with tab_intel[1]:
+            if 'render_forensic_map' in globals(): render_forensic_map(api_key)
+        with tab_intel[2]:
+            if 'render_property_genealogy' in globals(): render_property_genealogy(api_key)
+        with tab_intel[3]:
+            if 'render_owner_mode' in globals(): render_owner_mode(api_key)
+
+    # 6. KURUMSAL HAFIZA
+    elif selected_page == "🏛️ Kurumsal Hafıza & Arşiv":
+        st.header("🏛️ Kurumsal Hafıza")
+        if 'render_corporate_memory' in globals(): render_corporate_memory(api_key)
+        else: st.warning("Kurumsal Hafıza modülü bulunamadı.")
+
+    # 7. AYARLAR
+    elif selected_page == "⚙️ Ayarlar & Yardım":
+        st.header("⚙️ Ayarlar")
+        st.write("Uygulama Sürümü: 4.0.1")
+        st.write("Geliştirici Modu: Kapalı")
+        if st.button("Önbelleği Temizle"):
+            st.cache_data.clear()
+            st.success("Önbellek temizlendi.")
+
+if __name__ == "__main__":
+    main()
+
 
 # --- KALICILIK (VERİ TABANI) FONKSİYONLARI ---
 DURUSMA_FILE = "durusma_kayitlari.json"
