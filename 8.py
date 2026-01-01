@@ -2622,7 +2622,7 @@ def main():
 
     # 4. SATIR: oyun değiştirici hamle menüsü (15 Sekme)
     st.markdown("### 🛠️ Temel Araçlar & Strateji")
-    tabx1, tabx2, tabx3, tabx4, tabx5, tab6x = st.tabs([
+    tabx1, tabx2, tabx3, tabx4, tabx5, tabx6 = st.tabs([
         "🗺️ Adli Harita", "🕰️ Mevzuat Makinesi", "🧐 Rapor Denetçisi", "🏛️ Kurumsal Hafıza", "💰 Dava Maliyeti", "🗺️ Adli Olay Yeri" 
     ])
 
