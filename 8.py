@@ -665,7 +665,7 @@ def main():
 
     # 3. SATIR: Simülasyon ve İleri Düzey Risk (YENİ EKLENDİ)
     st.markdown("### 🔮 Simülasyon & Risk Analizi")
-    tab_checkup, tab_timemachine = st.tabs(["🏥 Kurumsal Check-up", "⏳ Zaman Makinesi", "⚖️ AYM & AİHM Testi"])
+    tab_checkup, tab_timemachine, tab_aym = st.tabs(["🏥 Kurumsal Check-up", "⏳ Zaman Makinesi", "⚖️ AYM & AİHM Testi"])
 
     # --- SEKMELERİN İÇERİKLERİ ---
     
