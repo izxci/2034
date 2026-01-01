@@ -1244,6 +1244,10 @@ import pandas as pd
 from datetime import datetime, timedelta
 
 def render_limitations_heatmap(api_key):
+    # --- IMPORTLARI İZOLE ET (Çakışmayı Önler) ---
+    import pandas as pd
+    import datetime as dt  # datetime modülünü 'dt' olarak çağırıyoruz
+    
     st.info("🔥 **Zamanaşımı Isı Haritası:** Dava türüne ve tarihlere göre her bir alacak kaleminin risk durumunu analiz eder. Islah ve hak düşürücü süreleri 'Borsa Ekranı' gibi takip eder.")
 
     # --- 0. OTOMATİK MODEL SEÇİCİ ---
@@ -1269,11 +1273,12 @@ def render_limitations_heatmap(api_key):
         
         dava_turu = st.selectbox("Dava Türü", ["İş Hukuku (İşçi Alacağı)", "Ticari Alacak", "Tüketici", "Tazminat (Haksız Fiil)"])
         
-        bugun = datetime.now().date()
+        # HATA ÇIKARAN SATIR DÜZELTİLDİ: dt.datetime.now().date()
+        bugun = dt.datetime.now().date()
         
         # Tarih Seçiciler
-        fesih_tarihi = st.date_input("Fesih / Olay Tarihi", value=bugun - timedelta(days=365*4))
-        dava_tarihi = st.date_input("Dava Açılış Tarihi", value=bugun - timedelta(days=300))
+        fesih_tarihi = st.date_input("Fesih / Olay Tarihi", value=bugun - dt.timedelta(days=365*4))
+        dava_tarihi = st.date_input("Dava Açılış Tarihi", value=bugun - dt.timedelta(days=300))
         
         st.divider()
         st.markdown("#### ⚡ Islah Alarmı")
@@ -1281,7 +1286,7 @@ def render_limitations_heatmap(api_key):
         
         teblig_tarihi = None
         if is_bilirkişi:
-            teblig_tarihi = st.date_input("Rapor Tebliğ Tarihi", value=bugun - timedelta(days=5))
+            teblig_tarihi = st.date_input("Rapor Tebliğ Tarihi", value=bugun - dt.timedelta(days=5))
             st.caption("Islah için genellikle 2 haftalık itiraz süresi veya tahkikat sonuna kadar süre dikkate alınır.")
 
     # --- 2. HESAPLAMA MOTORU ---
@@ -1290,24 +1295,24 @@ def render_limitations_heatmap(api_key):
     # İş Hukuku Kuralları (Basitleştirilmiş Örnekler)
     if dava_turu == "İş Hukuku (İşçi Alacağı)":
         # 1. Kıdem Tazminatı (5 Yıl - 2017 sonrası)
-        kidem_suresi = fesih_tarihi + timedelta(days=365*5)
+        kidem_suresi = fesih_tarihi + dt.timedelta(days=365*5)
         kalan_gun = (kidem_suresi - bugun).days
         data.append({"Kalem": "Kıdem Tazminatı", "Son Tarih": kidem_suresi, "Kalan Gün": kalan_gun, "Risk": ""})
         
         # 2. Fazla Mesai (5 Yıl)
-        mesai_suresi = fesih_tarihi + timedelta(days=365*5)
+        mesai_suresi = fesih_tarihi + dt.timedelta(days=365*5)
         kalan_gun_mesai = (mesai_suresi - bugun).days
         data.append({"Kalem": "Fazla Mesai", "Son Tarih": mesai_suresi, "Kalan Gün": kalan_gun_mesai, "Risk": ""})
         
         # 3. İşe İade (1 Ay - Arabulucu)
-        ise_iade_suresi = fesih_tarihi + timedelta(days=30)
+        ise_iade_suresi = fesih_tarihi + dt.timedelta(days=30)
         kalan_gun_iade = (ise_iade_suresi - bugun).days
         data.append({"Kalem": "İşe İade (Arabulucu)", "Son Tarih": ise_iade_suresi, "Kalan Gün": kalan_gun_iade, "Risk": ""})
 
     # Islah Hesabı (Kritik)
     if is_bilirkişi and teblig_tarihi:
         # HMK 281 - 2 Hafta İtiraz (Islah için stratejik zaman)
-        islah_suresi = teblig_tarihi + timedelta(days=14)
+        islah_suresi = teblig_tarihi + dt.timedelta(days=14)
         kalan_gun_islah = (islah_suresi - bugun).days
         data.append({"Kalem": "🚨 ISLAH / İTİRAZ", "Son Tarih": islah_suresi, "Kalan Gün": kalan_gun_islah, "Risk": "ÇOK YÜKSEK"})
 
@@ -1365,6 +1370,7 @@ def render_limitations_heatmap(api_key):
                     active_model = get_best_model()
                     model = genai.GenerativeModel(active_model)
                     
+                    # Tarihleri stringe çevirerek JSON hatasını önle
                     prompt = f"""
                     GÖREV: Bir avukat için zamanaşımı risk analizi yap.
                     
@@ -1391,6 +1397,7 @@ def render_limitations_heatmap(api_key):
                     
                 except Exception as e:
                     output_box.error(f"Hata: {e}")
+
 
 import networkx as nx
 import matplotlib.pyplot as plt
