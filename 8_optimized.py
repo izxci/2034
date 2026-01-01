@@ -53,72 +53,58 @@ st.set_page_config(
 # --- ✨ MÜKEMMEL GÖRSEL TASARIM (CSS) ---
 st.markdown("""
     <style>
-    /* Ana Arka Plan ve Cam Efekti */
-    .stApp {
-        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-    }
-    
-    /* Modern Kart Tasarımı */
+    .stApp { background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); }
     .stTabs [data-baseweb="tab-panel"] {
         background: rgba(255, 255, 255, 0.85);
         backdrop-filter: blur(15px);
         border-radius: 25px;
         padding: 30px;
-        border: 1px solid rgba(255, 255, 255, 0.4);
         box-shadow: 0 15px 45px 0 rgba(31, 38, 135, 0.1);
-        margin-top: 15px;
     }
-    
-    /* Sekme (Tab) Tasarımı */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 15px;
-        background-color: transparent;
+    .durusma-item {
+        background: rgba(255, 255, 255, 0.1);
+        padding: 10px;
+        border-radius: 10px;
+        margin-bottom: 8px;
+        border-left: 4px solid #3b82f6;
+        font-size: 0.85rem;
     }
-    .stTabs [data-baseweb="tab"] {
-        height: 60px;
-        background-color: rgba(255, 255, 255, 0.6);
-        border-radius: 15px 15px 0 0;
-        color: #1e293b;
-        font-weight: 700;
-        padding: 0 25px;
-        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-    .stTabs [aria-selected="true"] {
-        background-color: #1e3a8a !important;
-        color: white !important;
-        transform: translateY(-5px);
-        box-shadow: 0 8px 20px rgba(30, 58, 138, 0.3);
-    }
-    
-    /* Hukuki Bilgi Kutuları */
-    .kanun-kutusu { background: #fff3e0; padding: 25px; border-left: 12px solid #ff9800; border-radius: 15px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
-    .ictihat-kutusu { background: #e3f2fd; padding: 25px; border-left: 12px solid #2196f3; border-radius: 15px; margin-bottom: 20px; }
-    .buyur-abi-kutusu { background: #f3e5f5; padding: 25px; border-left: 12px solid #9c27b0; border-radius: 15px; margin-bottom: 20px; }
-    .alarm-kutusu { background: #ffebee; padding: 25px; border-left: 12px solid #f44336; border-radius: 15px; color: #b71c1c; font-weight: bold; }
-    
-    /* Sidebar Modernizasyonu */
-    [data-testid="stSidebar"] {
-        background-color: #0f172a;
-        color: white;
-        border-right: 1px solid rgba(255,255,255,0.1);
-    }
-    
-    /* Butonlar */
-    .stButton>button {
-        border-radius: 15px;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 1.2px;
-        transition: all 0.3s ease;
-        border: none;
-        padding: 12px 24px;
-    }
-    .stButton>button:hover {
-        transform: scale(1.05);
-        box-shadow: 0 12px 25px rgba(0,0,0,0.2);
-    }
+    .durusma-tarih { color: #60a5fa; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
+
+# --- 📅 DURUŞMA MANTIĞI ---
+def get_upcoming_durusmalar():
+    # Bu fonksiyon mevcut session_state veya JSON dosyanızdan verileri çeker.
+    # Örnek veri (Gerçek uygulamada load_durusma_data() kullanılacak):
+    durusmalar = [
+        {"tarih": "2026-01-05", "saat": "10:30", "mahkeme": "İst. 4. Asliye"},
+        {"tarih": "2026-01-12", "saat": "14:00", "mahkeme": "Ank. 2. Ağır"},
+        {"tarih": "2026-01-15", "saat": "09:15", "mahkeme": "İzm. 1. Sulh"},
+        {"tarih": "2026-01-20", "saat": "11:45", "mahkeme": "Bursa 3. İş"},
+        {"tarih": "2026-01-25", "saat": "15:30", "mahkeme": "Ant. 5. Aile"}
+    ]
+    return durusmalar[:5]
+
+# --- SIDEBAR ---
+with st.sidebar:
+    st.title("⚖️ Hukuk Asistanı")
+    st.divider()
+    
+    st.header("📁 Dosya Bilgileri")
+    st.text_input("Davacı", "Ahmet Yılmaz")
+    st.text_input("Davalı", "Mehmet Demir")
+    st.text_input("Dosya No", "2024/123 E.")
+    
+    st.divider()
+    st.subheader("📅 Yaklaşan 5 Duruşma")
+    for d in get_upcoming_durusmalar():
+        st.markdown(f"""
+            <div class='durusma-item'>
+                <span class='durusma-tarih'>{d['tarih']} - {d['saat']}</span><br>
+                {d['mahkeme']}
+            </div>
+        """, unsafe_allow_html=True)
 
 
 # --- KALICILIK (VERİ TABANI) FONKSİYONLARI ---
