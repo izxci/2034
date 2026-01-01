@@ -2584,7 +2584,7 @@ def render_visual_forensics_module(api_key):
             "Ankara": (39.9334, 32.8597),
             "İzmir": (38.4192, 27.1287),
             "Antalya": (36.8969, 30.7133),
-            "Aksaray": (38.37255, 34.02537)
+            "Aksaray": (38.37255, 34.02537),
             "Erzurum": (39.9043, 41.2679)
         }
         city = st.selectbox("Olay Yeri", list(city_coords.keys()))
