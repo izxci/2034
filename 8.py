@@ -28,21 +28,6 @@ import difflib
 import plotly.graph_objects as go # Görsel grafikler için gerekli
 from PIL.ExifTags import TAGS
 
-def get_image_metadata(image):
-    """Resimden EXIF verilerini (Tarih, Cihaz, Yazılım) çeker."""
-    meta_dict = {}
-    try:
-        exif_data = image._getexif()
-        if exif_data:
-            for tag_id, value in exif_data.items():
-                tag_name = TAGS.get(tag_id, tag_id)
-                # İlgilendiğimiz kritik veriler
-                if tag_name in ['DateTime', 'DateTimeOriginal', 'Make', 'Model', 'Software', 'GPSInfo']:
-                    meta_dict[tag_name] = str(value)
-    except:
-        return None
-    return meta_dict
-
 
 # --- Sayfa Ayarları ---
 st.set_page_config(
@@ -108,6 +93,21 @@ st.markdown("""
     }
     </style>
     """, unsafe_allow_html=True)
+
+def get_image_metadata(image):
+    """Resimden EXIF verilerini (Tarih, Cihaz, Yazılım) çeker."""
+    meta_dict = {}
+    try:
+        exif_data = image._getexif()
+        if exif_data:
+            for tag_id, value in exif_data.items():
+                tag_name = TAGS.get(tag_id, tag_id)
+                # İlgilendiğimiz kritik veriler
+                if tag_name in ['DateTime', 'DateTimeOriginal', 'Make', 'Model', 'Software', 'GPSInfo']:
+                    meta_dict[tag_name] = str(value)
+    except:
+        return None
+    return meta_dict
 
 # --- KALICILIK (VERİ TABANI) FONKSİYONLARI ---
 DURUSMA_FILE = "durusma_kayitlari.json"
