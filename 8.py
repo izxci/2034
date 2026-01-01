@@ -507,60 +507,93 @@ def render_time_machine(api_key):
 
 # --- 3. MODÜL: AYM & AİHM UYGUNLUK TESTİ ---
 def render_aym_aihm_module(api_key):
-    st.info("Dilekçenizi veya yerel mahkeme kararını yapıştırın. Yapay zeka, metni Avrupa İnsan Hakları Mahkemesi (AİHM) ve Anayasa Mahkemesi (AYM) kriterlerine göre tarasın.")
+    st.info("Dilekçenizi, Mahkeme Kararını veya UYAP (UDF) dosyasını yükleyin. Sistem OCR ile okuyup AİHM/AYM standartlarına göre 'Hak İhlali' analizi yapsın.")
     
-    col_input, col_result = st.columns([1, 1])
+    # Sekmeli Giriş Yapısı
+    tab_text, tab_file = st.tabs(["📝 Metin Yapıştır", "📂 Dosya Yükle (PDF/UDF/TIFF)"])
     
-    with col_input:
-        st.markdown("#### 📝 Metin Girişi")
-        user_text = st.text_area("Dilekçe veya Karar Metnini Buraya Yapıştırın:", height=300, placeholder="Örn: Mahkeme, müvekkilin tapulu arazisine kamulaştırmasız el atmıştır...")
-        
-        analyze_btn = st.button("⚖️ İhlal Testini Başlat", type="primary", use_container_width=True)
+    process_text = ""
+    analyze_trigger = False
 
-    with col_result:
-        if analyze_btn and user_text:
-            if not api_key:
-                st.error("⚠️ Lütfen API Anahtarını giriniz.")
-            elif len(user_text) < 50:
-                st.warning("Lütfen daha uzun bir metin giriniz.")
-            else:
-                with st.spinner("Metin, AİHM ve AYM içtihatlarıyla çapraz sorgulanıyor..."):
+    # --- TAB 1: MANUEL METİN ---
+    with tab_text:
+        user_text_input = st.text_area("Metni Buraya Yapıştırın:", height=300, placeholder="Örn: Mahkeme gerekçesiz karar vererek adil yargılanma hakkımı ihlal etmiştir...")
+        if st.button("⚖️ Metni Analiz Et", key="btn_text_aym", type="primary"):
+            process_text = user_text_input
+            analyze_trigger = True
+
+    # --- TAB 2: DOSYA YÜKLEME ---
+    with tab_file:
+        uploaded_file = st.file_uploader("Dosya Seçin", type=["pdf", "udf", "xml", "tiff", "tif", "jpg", "png", "txt"])
+        
+        if uploaded_file:
+            st.caption(f"Yüklenen Dosya: {uploaded_file.name}")
+            if st.button("👁️ Dosyayı Oku ve Analiz Et", key="btn_file_aym", type="primary"):
+                with st.spinner("Dosya okunuyor ve OCR yapılıyor..."):
+                    extracted_text = extract_text_from_legal_file(uploaded_file, api_key)
                     
-                    prompt = f"""
-                    GÖREV: Sen AİHM ve AYM kararları konusunda uzmanlaşmış kıdemli bir hukukçusun.
-                    METİN: "{user_text[:4000]}"
-                    
-                    ANALİZ ADIMLARI:
-                    1. Bu metindeki olayda, Avrupa İnsan Hakları Sözleşmesi (AİHS) veya Anayasa ile korunan hangi temel haklar risk altında? (Örn: Mülkiyet Hakkı, Adil Yargılanma Hakkı).
-                    2. Bu metin bir mahkeme kararıysa Üst Mahkemede BOZULMA İHTİMALİ yüzde kaçtır? Bir dilekçeyse KABUL EDİLME GÜCÜ yüzde kaçtır? (0-100 arası bir puan ver).
-                    3. Konuyla ilgili emsal bir AİHM veya AYM kararı adı ver (Örn: AİHM, Sporrong ve Lönnroth v. İsveç).
-                    
-                    ÇIKTI FORMATI:
-                    ORAN: [Sayı]
-                    ANALİZ: [Detaylı Hukuki Görüş]
-                    EMSAL: [Karar İsimleri]
-                    """
-                    
-                    ai_response = get_gemini_text_response(prompt, api_key)
-                    
-                    # Oranı çekme
-                    ihlal_orani = 50
-                    match = re.search(r"ORAN:\s*(\d+)", ai_response)
-                    if match: ihlal_orani = int(match.group(1))
-                    
-                    # --- GÖRSELLEŞTİRME ---
-                    st.markdown(f"### 🛡️ Hak İhlali / Bozulma Riski: %{ihlal_orani}")
+                    if "[OCR GEREKLİ]" in extracted_text or "Hata" in extracted_text:
+                        st.error(extracted_text)
+                    else:
+                        process_text = extracted_text
+                        st.success("Dosya başarıyla metne dönüştürüldü! Analiz başlıyor...")
+                        with st.expander("Okunan Metni Gör"):
+                            st.text(process_text[:1000] + "...")
+                        analyze_trigger = True
+
+    # --- ORTAK ANALİZ MOTORU ---
+    if analyze_trigger and process_text:
+        if not api_key:
+            st.error("⚠️ Lütfen API Anahtarını giriniz.")
+        elif len(process_text) < 20:
+            st.warning("Analiz için yeterli metin bulunamadı.")
+        else:
+            with st.spinner("Metin, AİHM ve AYM içtihatlarıyla çapraz sorgulanıyor..."):
+                
+                prompt = f"""
+                GÖREV: Sen AİHM ve AYM kararları konusunda uzmanlaşmış kıdemli bir hukukçusun.
+                METİN: "{process_text[:6000]}" (Kısaltılmış olabilir)
+                
+                ANALİZ ADIMLARI:
+                1. Bu metindeki olayda, Avrupa İnsan Hakları Sözleşmesi (AİHS) veya Anayasa ile korunan hangi temel haklar risk altında? (Örn: Mülkiyet Hakkı, Adil Yargılanma Hakkı).
+                2. Bu metin bir mahkeme kararıysa Üst Mahkemede BOZULMA İHTİMALİ yüzde kaçtır? Bir dilekçeyse KABUL EDİLME GÜCÜ yüzde kaçtır? (0-100 arası bir puan ver).
+                3. Konuyla ilgili emsal bir AİHM veya AYM kararı adı ver ve özetle.
+                4. Eğer bir ihlal varsa, başvuru formunda hangi argüman kullanılmalı?
+                
+                ÇIKTI FORMATI:
+                ORAN: [Sayı]
+                ANALİZ: [Detaylı Hukuki Görüş]
+                EMSAL: [Karar İsimleri]
+                STRATEJİ: [Öneri]
+                """
+                
+                ai_response = get_gemini_text_response(prompt, api_key)
+                
+                # Oranı çekme
+                ihlal_orani = 50
+                match = re.search(r"ORAN:\s*(\d+)", ai_response)
+                if match: ihlal_orani = int(match.group(1))
+                
+                # --- SONUÇ EKRANI ---
+                st.divider()
+                col_score, col_detail = st.columns([1, 2])
+                
+                with col_score:
+                    st.markdown(f"<h2 style='text-align: center; color: #d63031;'>%{ihlal_orani}</h2>", unsafe_allow_html=True)
+                    st.markdown("<p style='text-align: center;'><b>Bozulma / İhlal Riski</b></p>", unsafe_allow_html=True)
                     st.progress(ihlal_orani / 100)
                     
                     if ihlal_orani > 70:
-                        st.error("🚨 YÜKSEK İHLAL RİSKİ: Bu karar muhtemelen AİHM veya AYM'den döner!")
+                        st.error("🚨 KRİTİK: Yüksek ihtimalle hak ihlali var.")
                     elif ihlal_orani > 40:
-                        st.warning("⚠️ ORTA RİSK: Temellendirme güçlendirilmeli.")
+                        st.warning("⚠️ DİKKAT: Güçlü argümanlar gerekiyor.")
                     else:
-                        st.success("✅ DÜŞÜK RİSK: Metin standartlara uygun görünüyor.")
-                        
-                    st.markdown("---")
-                    st.markdown(ai_response.replace(f"ORAN: {ihlal_orani}", ""))
+                        st.success("✅ TEMİZ: Belirgin bir ihlal görünmüyor.")
+
+                with col_detail:
+                    st.markdown("### 🏛️ Yüksek Yargı Raporu")
+                    st.write(ai_response.replace(f"ORAN: {ihlal_orani}", ""))
+
 
 
 # --- ANA UYGULAMA ---
