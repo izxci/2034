@@ -17,4 +17,6 @@ pandas
 openpyxl
 graphviz
 networkx
+streamlit-folium
+folium
 google-generativeai>=0.7.0
