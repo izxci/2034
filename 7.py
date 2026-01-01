@@ -24,67 +24,92 @@ import shutil
 import json
 import difflib
 
-# --- Sayfa Ayarları ---
+# --- 🚀 PERFORMANS OPTİMİZASYONU (CACHING) ---
+@st.cache_data(ttl=3600)
+def get_ai_response_cached(prompt, api_key, model_name='gemini-1.5-flash'):
+    if not api_key: return "API Key Eksik"
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel(model_name)
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"Hata: {str(e)}"
+
+# --- ⚖️ SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Hukuk Asistanı AI",
+    page_title="Hukuk Asistanı AI - Premium",
     page_icon="⚖️",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# --- CSS ---
+# --- ✨ MÜKEMMEL GÖRSEL TASARIM (CSS) ---
 st.markdown("""
     <style>
-    .main { background-color: #f8f9fa; }
-    .kanun-kutusu { 
-        background-color: #fff3e0; 
-        padding: 15px; 
-        border-left: 5px solid #ff9800; 
-        border-radius: 5px; 
-        margin-bottom: 10px;
-        white-space: pre-wrap;
+    /* Ana Arka Plan ve Cam Efekti */
+    .stApp {
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
     }
-    .ictihat-kutusu {
-        background-color: #e3f2fd;
-        padding: 15px;
-        border-left: 5px solid #2196f3;
-        border-radius: 5px;
-        margin-bottom: 10px;
+    
+    /* Modern Kart Tasarımı */
+    .stTabs [data-baseweb="tab-panel"] {
+        background: rgba(255, 255, 255, 0.85);
+        backdrop-filter: blur(15px);
+        border-radius: 25px;
+        padding: 30px;
+        border: 1px solid rgba(255, 255, 255, 0.4);
+        box-shadow: 0 15px 45px 0 rgba(31, 38, 135, 0.1);
+        margin-top: 15px;
     }
-    .buyur-abi-kutusu {
-        background-color: #f3e5f5;
-        padding: 15px;
-        border-left: 5px solid #9c27b0;
-        border-radius: 5px;
-        margin-bottom: 10px;
+    
+    /* Sekme (Tab) Tasarımı */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 15px;
+        background-color: transparent;
     }
-    .alarm-kutusu {
-        background-color: #ffebee;
-        padding: 15px;
-        border-left: 5px solid #f44336;
-        border-radius: 5px;
-        margin-bottom: 10px;
-        font-weight: bold;
-        color: #b71c1c;
+    .stTabs [data-baseweb="tab"] {
+        height: 60px;
+        background-color: rgba(255, 255, 255, 0.6);
+        border-radius: 15px 15px 0 0;
+        color: #1e293b;
+        font-weight: 700;
+        padding: 0 25px;
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
     }
-    .arsiv-kutusu {
-        background-color: #e0f2f1;
-        padding: 15px;
-        border-left: 5px solid #009688;
-        border-radius: 5px;
-        margin-bottom: 10px;
+    .stTabs [aria-selected="true"] {
+        background-color: #1e3a8a !important;
+        color: white !important;
+        transform: translateY(-5px);
+        box-shadow: 0 8px 20px rgba(30, 58, 138, 0.3);
     }
-    .uyap-kutusu {
-        background-color: #fce4ec; 
-        padding: 15px; 
-        border-left: 5px solid #c2185b; 
-        border-radius: 5px; 
-        margin-bottom: 20px;
+    
+    /* Hukuki Bilgi Kutuları */
+    .kanun-kutusu { background: #fff3e0; padding: 25px; border-left: 12px solid #ff9800; border-radius: 15px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+    .ictihat-kutusu { background: #e3f2fd; padding: 25px; border-left: 12px solid #2196f3; border-radius: 15px; margin-bottom: 20px; }
+    .buyur-abi-kutusu { background: #f3e5f5; padding: 25px; border-left: 12px solid #9c27b0; border-radius: 15px; margin-bottom: 20px; }
+    .alarm-kutusu { background: #ffebee; padding: 25px; border-left: 12px solid #f44336; border-radius: 15px; color: #b71c1c; font-weight: bold; }
+    
+    /* Sidebar Modernizasyonu */
+    [data-testid="stSidebar"] {
+        background-color: #0f172a;
+        color: white;
+        border-right: 1px solid rgba(255,255,255,0.1);
     }
-    .ozel-sekme {
-        border: 1px solid #ddd;
-        padding: 20px;
-        border-radius: 10px;
-        background-color: #ffffff;
+    
+    /* Butonlar */
+    .stButton>button {
+        border-radius: 15px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 1.2px;
+        transition: all 0.3s ease;
+        border: none;
+        padding: 12px 24px;
+    }
+    .stButton>button:hover {
+        transform: scale(1.05);
+        box-shadow: 0 12px 25px rgba(0,0,0,0.2);
     }
     </style>
     """, unsafe_allow_html=True)
