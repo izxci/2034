@@ -1310,7 +1310,7 @@ def main():
 
     with tab_sxx: render_precedent_alert_module(api_key)
     with tab_sah: render_owner_mode(api_key)
-        with tab_soy: render_property_genealogy(api_key)
+    with tab_soy: render_property_genealogy(api_key)
 
     # --- TAB İÇERİKLERİ ---
 
