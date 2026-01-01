@@ -1392,6 +1392,139 @@ def render_limitations_heatmap(api_key):
                 except Exception as e:
                     output_box.error(f"Hata: {e}")
 
+import networkx as nx
+import matplotlib.pyplot as plt
+
+def render_conflict_scanner(api_key):
+    st.info("🕸️ **Gizli Bağlantı (Conflict of Interest) Tarayıcısı:** Hakim, avukat ve tanıklar arasındaki görünmez ticari ve sosyal bağları ortaya çıkarır. NetworkX ile ağ analizi yapar.")
+
+    # --- 0. OTOMATİK MODEL SEÇİCİ ---
+    def get_best_model():
+        try:
+            available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+            for m in available_models:
+                if 'flash' in m: return m
+            return available_models[0] if available_models else "models/gemini-pro"
+        except:
+            return "models/gemini-pro"
+
+    col_input, col_graph = st.columns([1, 2])
+
+    # --- 1. GİRDİ PANELİ ---
+    with col_input:
+        st.markdown("### 👥 Aktörleri Tanımla")
+        
+        hakim = st.text_input("Hakim İsmi", "Hakim Zeynep Yılmaz")
+        avukat_karsi = st.text_input("Karşı Taraf Avukatı", "Av. Ahmet Demir")
+        tanik = st.text_input("Tanık / Bilirkişi", "Bilirkişi Mehmet Öztürk")
+        sirket = st.text_input("İlgili Şirket (Opsiyonel)", "Delta İnşaat A.Ş.")
+        
+        st.divider()
+        st.markdown("#### 📡 Veri Kaynağı")
+        source_type = st.radio("Tarama Yöntemi", ["Demo Simülasyonu (NetworkX Testi)", "AI ile Açık Kaynak Tarama (OSINT)"])
+
+    # --- 2. ANALİZ MOTORU ---
+    with col_graph:
+        st.markdown("### 🕸️ İlişki Ağı Haritası")
+        
+        if st.button("🔍 Derinlemesine Tara", type="primary"):
+            
+            # SENARYO 1: DEMO SİMÜLASYONU (NetworkX Gücünü Göstermek İçin)
+            if source_type == "Demo Simülasyonu (NetworkX Testi)":
+                st.warning("⚠️ Demo Modu: Rastgele ticari sicil verileri simüle ediliyor...")
+                
+                # NetworkX Grafiği Oluştur
+                G = nx.Graph()
+                
+                # Düğümleri (Kişileri/Kurumları) Ekle
+                G.add_node(hakim, type="Yargı", color="red")
+                G.add_node(avukat_karsi, type="Avukat", color="black")
+                G.add_node(tanik, type="Tanık", color="blue")
+                G.add_node(sirket, type="Şirket", color="green")
+                
+                # Gizli Bağlantıları Ekle (Simülasyon)
+                # Örnek: Avukat ve Tanık, 5 yıl önce "Omega Yazılım"da ortaktı.
+                hidden_entity = "Omega Yazılım Ltd. Şti. (Eski)"
+                G.add_node(hidden_entity, type="Şirket", color="grey")
+                
+                G.add_edge(avukat_karsi, hidden_entity, relation="Eski Ortak (2018)")
+                G.add_edge(tanik, hidden_entity, relation="Yön. Kur. Üyesi (2018)")
+                
+                # Örnek: Hakim ve Şirket arasında dolaylı bağ
+                dernek = "Hukukçular Vakfı"
+                G.add_node(dernek, type="STK", color="orange")
+                G.add_edge(hakim, dernek, relation="Üye")
+                G.add_edge(avukat_karsi, dernek, relation="Yönetim Kurulu")
+
+                # Graphviz ile Çiz (Streamlit için en temizi)
+                dot_code = "graph {"
+                dot_code += "\n  rankdir=LR;"
+                
+                # NetworkX verisini Graphviz formatına çevir
+                for u, v, data in G.edges(data=True):
+                    rel = data.get('relation', '')
+                    dot_code += f'\n  "{u}" -- "{v}" [label="{rel}", fontsize=10];'
+                
+                # Renklendirme
+                dot_code += f'\n  "{hakim}" [style=filled, fillcolor="#ffcccc"];' # Kırmızımsı
+                dot_code += f'\n  "{avukat_karsi}" [style=filled, fillcolor="#cccccc"];'
+                dot_code += f'\n  "{tanik}" [style=filled, fillcolor="#ccccff"];'
+                dot_code += f'\n  "{hidden_entity}" [style=filled, fillcolor="#ffffcc", shape=box];' # Sarı (Kilit Nokta)
+                
+                dot_code += "\n}"
+                st.graphviz_chart(dot_code)
+                
+                # NETWORKX ANALİZİ: EN KISA YOL (Shortest Path)
+                try:
+                    path = nx.shortest_path(G, source=avukat_karsi, target=tanik)
+                    st.error(f"🚨 **KRİTİK BULGU:** {avukat_karsi} ile {tanik} arasında bağlantı tespit edildi!")
+                    st.write(f"🔗 **Bağlantı Zinciri:** {' -> '.join(path)}")
+                    st.caption("Bu bilgi, HMK m. 254 kapsamında tanığın tarafsızlığını sorgulamak için kullanılabilir.")
+                except nx.NetworkXNoPath:
+                    st.success("Doğrudan bir bağlantı bulunamadı.")
+
+            # SENARYO 2: AI OSINT ANALİZİ (Gerçekçi Senaryo)
+            else:
+                if not api_key:
+                    st.error("API Key gerekli.")
+                else:
+                    output_box = st.empty()
+                    output_box.info("Açık kaynaklar ve haberler taranıyor...")
+                    
+                    try:
+                        genai.configure(api_key=api_key)
+                        active_model = get_best_model()
+                        model = genai.GenerativeModel(active_model)
+                        
+                        # Prompt: AI'yı bir OSINT uzmanı gibi çalıştırıyoruz
+                        prompt = f"""
+                        GÖREV: Sen kıdemli bir istihbarat analistisin.
+                        Aşağıdaki kişiler arasında potansiyel bir "Çıkar Çatışması" (Conflict of Interest) senaryosu kurgula ve analiz et.
+                        
+                        KİŞİLER:
+                        1. Hakim: {hakim}
+                        2. Karşı Avukat: {avukat_karsi}
+                        3. Tanık: {tanik}
+                        4. Şirket: {sirket}
+                        
+                        İSTENENLER:
+                        1. Bu isimler arasında olası (hayali veya genel bilgiye dayalı) geçmiş bağlantıları düşün (Eski okul arkadaşlığı, aynı dernek üyeliği, eski şirket ortaklığı).
+                        2. Özellikle "Tanık" ile "Karşı Avukat" arasında redd-i hakim veya tanık itirazına gerekçe olabilecek bir bağ bul.
+                        3. Bunu bir "İstihbarat Raporu" formatında sun.
+                        4. Hukuki Tavsiye: Bu bağlantıyı mahkemede nasıl delillendiririm?
+                        """
+                        
+                        response = model.generate_content(prompt, stream=True)
+                        
+                        full_text = ""
+                        for chunk in response:
+                            full_text += chunk.text
+                            output_box.markdown(full_text + "▌")
+                        output_box.markdown(full_text)
+                        
+                    except Exception as e:
+                        output_box.error(f"Hata: {e}")
+
 
 
 # --- ANA UYGULAMA ---
@@ -1496,7 +1629,7 @@ def main():
 
     # 3. SATIR: Simülasyon ve İleri Düzey Risk (YENİ EKLENDİ)
     st.markdown("### 🔮 Simülasyon & Risk Analizi")
-    tab_checkup, tab_timemachine, tab_aym, tab_deepfake, tab_osyn, tab_sxx, tab_sah, tab_soy, tab_isx = st.tabs(["🏥 Kurumsal Check-up", "⏳ Zaman Makinesi", "⚖️ AYM & AİHM Testi", "🕵️ Deepfake Kontrol", "🌐 OSINT (İstihbarat)", "🔔 Emsal Alarm", "👑 Sahip Modu", "🌳 Soyağacı", "🔥 Isı Haritası"])
+    tab_checkup, tab_timemachine, tab_aym, tab_deepfake, tab_osyn, tab_sxx, tab_sah, tab_soy, tab_isx, tab_golx = st.tabs(["🏥 Kurumsal Check-up", "⏳ Zaman Makinesi", "⚖️ AYM & AİHM Testi", "🕵️ Deepfake Kontrol", "🌐 OSINT (İstihbarat)", "🔔 Emsal Alarm", "👑 Sahip Modu", "🌳 Soyağacı", "🔥 Isı Haritası", "🕸️ Gizli Bağlantı"])
 
     # --- SEKMELERİN İÇERİKLERİ ---
     
@@ -1524,6 +1657,7 @@ def main():
     with tab_sah: render_owner_mode(api_key)
     with tab_soy: render_property_genealogy(api_key)
     with tab_isx: render_limitations_heatmap(api_key)
+    with tab_golx: render_conflict_scanner(api_key)
     # --- TAB İÇERİKLERİ ---
 
     with tab1:
