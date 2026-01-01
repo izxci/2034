@@ -1074,14 +1074,13 @@ def render_owner_mode(api_key):
                         except Exception as e:
                             st.error(f"Cevap üretilemedi: {e}")
 
-import json # AI çıktısını işlemek için gerekli
+import json
 
 def render_property_genealogy(api_key):
-    st.info("🌳 **Mülkiyet Soyağacı (Otomatik):** Tapu senetlerini, kadastro tutanaklarını veya veraset ilamlarını yükleyin. Yapay zeka, belgeleri okuyup tarihsel akışı otomatik olarak grafiğe döker.")
+    st.info("🌳 **Mülkiyet Soyağacı:** Tapu ve kadastro belgelerinizi yükleyin, AI zinciri kursun ve riskleri saniyeler içinde analiz etsin.")
 
-    # --- 1. İÇ DOSYA OKUYUCU (Bu modüle özel) ---
+    # --- 1. DOSYA OKUMA ---
     def get_genealogy_file_text(file_obj, api_key_for_ocr):
-        """Belgelerden metin ayıklar."""
         filename = file_obj.name.lower()
         file_bytes = file_obj.read()
         text = ""
@@ -1096,130 +1095,111 @@ def render_property_genealogy(api_key):
                 if api_key_for_ocr:
                     image = Image.open(io.BytesIO(file_bytes))
                     model = genai.GenerativeModel('gemini-1.5-flash')
-                    response = model.generate_content(["Bu tapu/belgedeki tüm isimleri ve tarihleri oku:", image])
+                    response = model.generate_content(["Bu belgedeki isimleri ve tarihleri oku:", image])
                     text = response.text
             else:
                 text = file_bytes.decode("utf-8", errors='ignore')
             return text
-        except Exception as e:
+        except:
             return ""
 
-    # --- 2. STATE YÖNETİMİ ---
+    # --- 2. STATE ---
     if 'prop_history' not in st.session_state:
-        # Varsayılan Demo Verisi
         st.session_state.prop_history = [
-            {"yil": "1950", "kimden": "Hazine", "kime": "Ahmet (Dedem)", "islem": "Kadastro", "durum": "Pasif"},
-            {"yil": "1985", "kimden": "Ahmet (Dedem)", "kime": "Mehmet (Babam)", "islem": "Miras", "durum": "Aktif"}
+            {"yil": "1960", "kimden": "Hazine", "kime": "Mehmet Ağa", "islem": "Kadastro", "durum": "Pasif"},
+            {"yil": "1990", "kimden": "Mehmet Ağa", "kime": "Ali (Oğlu)", "islem": "Miras", "durum": "Aktif"}
         ]
 
     # --- 3. ARAYÜZ ---
     col_left, col_right = st.columns([1, 2])
 
-    # SOL: YÜKLEME VE LİSTE
+    # SOL: YÜKLEME
     with col_left:
         st.markdown("### 📂 Belge Yükle")
-        uploaded_files = st.file_uploader("Tapu, Veraset, Kadastro Belgesi (PDF/Resim)", accept_multiple_files=True)
+        uploaded_files = st.file_uploader("Tapu/Kadastro Evrakları", accept_multiple_files=True)
         
-        if st.button("⚡ Zinciri Otomatik Oluştur", type="primary"):
-            if not uploaded_files:
-                st.warning("Lütfen belge yükleyin.")
-            elif not api_key:
-                st.error("API Anahtarı eksik.")
+        if st.button("⚡ Zinciri Oluştur", type="primary"):
+            if not uploaded_files or not api_key:
+                st.warning("Dosya ve API Key gerekli.")
             else:
-                with st.spinner("Belgeler okunuyor ve zincir kuruluyor..."):
+                with st.spinner("Zincir kuruluyor..."):
                     genai.configure(api_key=api_key)
-                    
-                    # 1. Tüm metinleri birleştir
                     full_text = ""
                     for f in uploaded_files:
-                        full_text += f"\n--- BELGE: {f.name} ---\n" + get_genealogy_file_text(f, api_key)
+                        full_text += f"\nDOC: {f.name}\n" + get_genealogy_file_text(f, api_key)
                     
-                    # 2. AI'dan JSON Formatında Zincir İste
                     try:
-                        model = genai.GenerativeModel('gemini-1.5-flash') # Hızlı model
+                        # HIZLI MODEL KULLANIYORUZ (FLASH)
+                        model = genai.GenerativeModel('gemini-1.5-flash')
                         prompt = f"""
-                        GÖREV: Aşağıdaki tapu ve kadastro belgelerindeki metinleri analiz et.
-                        Bir mülkiyet zinciri (tarihçesi) çıkar.
-                        
-                        BELGE İÇERİĞİ:
-                        {full_text[:50000]}
-                        
-                        ÇIKTI FORMATI (KESİNLİKLE SADECE JSON):
-                        Şu formatta bir JSON listesi ver:
-                        [
-                          {{"yil": "1990", "kimden": "Ali", "kime": "Veli", "islem": "Satış", "durum": "Pasif"}},
-                          {{"yil": "2023", "kimden": "Veli", "kime": "Ayşe", "islem": "Miras", "durum": "Aktif"}}
-                        ]
-                        
-                        KURALLAR:
-                        - "durum": Eğer kişi hala malikse "Aktif", devrettiyse veya öldüyse "Pasif", durumu belirsizse "Kritik" yaz.
-                        - Sadece JSON kodu döndür, açıklama yapma.
+                        GÖREV: Metinlerdeki mülkiyet devirlerini JSON listesi yap.
+                        METİN: {full_text[:40000]}
+                        FORMAT: [{{"yil": "...", "kimden": "...", "kime": "...", "islem": "...", "durum": "Aktif/Pasif/Kritik"}}]
+                        SADECE JSON VER.
                         """
-                        
                         response = model.generate_content(prompt)
-                        
-                        # JSON Temizleme (Markdown ```json ... ``` temizliği)
                         clean_json = response.text.replace("```json", "").replace("```", "").strip()
-                        data = json.loads(clean_json)
-                        
-                        if isinstance(data, list):
-                            st.session_state.prop_history = data
-                            st.success(f"{len(data)} adet işlem tespit edildi!")
-                            st.rerun()
-                        else:
-                            st.error("AI veriyi çözümleyemedi.")
-                            
+                        st.session_state.prop_history = json.loads(clean_json)
+                        st.rerun()
                     except Exception as e:
-                        st.error(f"Zincir oluşturma hatası: {e}")
+                        st.error(f"Hata: {e}")
 
-        st.divider()
-        st.write("📋 **Tespit Edilen Liste:**")
-        st.dataframe(st.session_state.prop_history)
-        
-        if st.button("Listeyi Sıfırla"):
+        st.dataframe(st.session_state.prop_history, height=300)
+        if st.button("Temizle"):
             st.session_state.prop_history = []
             st.rerun()
 
     # SAĞ: GRAFİK VE ANALİZ
     with col_right:
-        st.markdown("### 🗺️ Görsel Soyağacı")
+        st.markdown("### 🗺️ Görsel Harita")
         
         if st.session_state.prop_history:
-            # Graphviz Kodu Oluştur
-            graph_code = "digraph {"
-            graph_code += "\n  rankdir=LR;" 
-            graph_code += "\n  node [shape=box, style=filled, fontname=\"Arial\"];"
-            
+            # Grafik Çizimi
+            graph_code = "digraph { rankdir=LR; node [shape=box, style=filled, fontname=\"Arial\"];"
             for item in st.session_state.prop_history:
-                # Renkler
-                color = "white"
-                if item.get("durum") == "Aktif": color = "#d4edda" # Yeşilimsi
-                if item.get("durum") == "Kritik": color = "#f8d7da" # Kırmızımsı
-                if item.get("durum") == "Pasif": color = "#e2e3e5" # Gri
+                color = "#d4edda" if item.get("durum") == "Aktif" else "#e2e3e5"
+                if item.get("durum") == "Kritik": color = "#f8d7da"
                 
-                # İsim Temizliği (Graphviz hatasını önlemek için)
                 k1 = str(item.get('kimden', '?')).replace('"', '').strip()
                 k2 = str(item.get('kime', '?')).replace('"', '').strip()
-                yil = str(item.get('yil', '-'))
-                islem = str(item.get('islem', '-'))
+                lbl = f"{item.get('yil')}\\n{item.get('islem')}"
                 
-                graph_code += f'\n  "{k1}" -> "{k2}" [label="{yil}\\n{islem}", fontsize=10];'
-                graph_code += f'\n  "{k2}" [fillcolor="{color}", label="{k2}"];'
-            
+                graph_code += f'\n "{k1}" -> "{k2}" [label="{lbl}", fontsize=10];'
+                graph_code += f'\n "{k2}" [fillcolor="{color}", label="{k2}"];'
             graph_code += "\n}"
             st.graphviz_chart(graph_code)
             
             st.divider()
             
-            # AI Analiz Butonu
-            if st.button("🕵️ Bu Zincirdeki Riskleri Analiz Et"):
-                with st.spinner("Dedektif inceliyor..."):
-                    model = genai.GenerativeModel('gemini-pro')
-                    chain_text = json.dumps(st.session_state.prop_history, ensure_ascii=False)
-                    res = model.generate_content(f"Bu tapu zincirindeki hukuki riskleri, kayıp mirasçıları ve eksik intikalleri analiz et:\n{chain_text}")
-                    st.info(res.text)
+            # --- DÜZELTİLEN KISIM (HIZLI ANALİZ) ---
+            if st.button("🕵️ Hızlı Risk Analizi Yap"):
+                with st.spinner("Riskler taranıyor (Hızlı Mod)..."):
+                    try:
+                        # BURADA 'FLASH' MODELİNE GEÇTİK (Çok daha hızlı)
+                        model = genai.GenerativeModel('gemini-1.5-flash')
+                        
+                        chain_data = json.dumps(st.session_state.prop_history, ensure_ascii=False)
+                        
+                        # Prompt'u kısalttık ve netleştirdik
+                        prompt = f"""
+                        GÖREV: Sen uzman bir tapu denetçisisin. Aşağıdaki mülkiyet zincirini analiz et.
+                        
+                        VERİ: {chain_data}
+                        
+                        Lütfen şu başlıklar altında KISA ve NET bir rapor yaz:
+                        1. 🔴 **Kritik Riskler:** (Ölü görünenler, intikali yapılmamışlar, kayıp halkalar)
+                        2. ⚠️ **Hukuki Uyarılar:** (Zamanaşımı, kadastro hatası ihtimali)
+                        3. ✅ **Sonuç:** (Bu taşınmaz güvenli mi?)
+                        """
+                        
+                        response = model.generate_content(prompt)
+                        st.markdown(response.text)
+                        
+                    except Exception as e:
+                        st.error(f"Bağlantı hatası: {e}. Lütfen tekrar deneyin.")
         else:
-            st.info("👈 Sol taraftan belge yükleyerek zinciri oluşturun.")
+            st.info("👈 Veri yok.")
+
 
 
 
