@@ -8,7 +8,7 @@ gTTS
 Pillow
 pytesseract
 matplotlib
-SpeechRecognition
+streamlit-mic-recorder
 SpeechRecognition
 pandas 
 openpyxl
