@@ -2482,49 +2482,53 @@ def render_forensic_map_module(api_key):
                 yorum = get_ai_response(prompt, api_key)
                 st.info(yorum)
 
-import math
-
-def calculate_sun_position(latitude, longitude):
-    import datetime as dtfx
-    """
-    Basitleştirilmiş NOAA Algoritması ile Güneş Yüksekliğini (Elevation) hesaplar.
-    Dış kütüphane gerektirmez.
-    """
-    # Radyan dönüşümleri
-    rad = math.pi / 180.0
-    deg = 180.0 / math.pi
-
-    # Yılın kaçıncı günü
-    day_of_year = dtfx.timetuple().tm_yday
-    
-    # 1. Deklinasyon Açısı (Güneşin ekvatorla açısı)
-    # Yaklaşık formül: 23.45 * sin(360/365 * (d - 81))
-    declination = 23.45 * math.sin(rad * (360/365.0) * (day_of_year - 81))
-
-    # 2. Zaman Denklemi (Equation of Time - Dakika cinsinden düzeltme)
-    # Güneş saati ile yerel saat arasındaki fark
-    B = rad * (360/365.0) * (day_of_year - 81)
-    eot = 9.87 * math.sin(2*B) - 7.53 * math.cos(B) - 1.5 * math.sin(B)
-
-    # 3. Yerel Güneş Zamanı (LST)
-    # Türkiye GMT+3 (45. meridyen)
-    lstm = 15 * 3 
-    time_correction = 4 * (longitude - lstm) + eot
-    local_time = dtfx.hour + dtfx.minute / 60.0
-    solar_time = local_time + time_correction / 60.0
-    
-    # 4. Saat Açısı (Hour Angle - HRA)
-    hra = 15 * (solar_time - 12)
-
-    # 5. Yükseklik Açısı (Elevation)
-    # sin(El) = sin(lat)sin(dec) + cos(lat)cos(dec)cos(hra)
-    sin_elevation = (math.sin(rad * latitude) * math.sin(rad * declination) + 
-                     math.cos(rad * latitude) * math.cos(rad * declination) * math.cos(rad * hra))
-    
-    elevation = math.asin(sin_elevation) * deg
-    return elevation
 
 def render_visual_forensics_module(api_key):
+    # --- GÜVENLİ IMPORTLAR (Çakışmayı önlemek için fonksiyon içine alındı) ---
+    import math
+    import datetime as dt_mod  # Modülü 'dt_mod' olarak çağırdık
+    import plotly.graph_objects as go
+
+    # --- İÇ HESAPLAMA FONKSİYONU ---
+    def calculate_sun_position_safe(latitude, longitude, date_time_obj):
+        """
+        NOAA tabanlı Güneş Açısı Hesaplama (İzole Fonksiyon)
+        """
+        # Radyan dönüşümleri
+        rad = math.pi / 180.0
+        deg = 180.0 / math.pi
+
+        # Yılın kaçıncı günü
+        day_of_year = date_time_obj.timetuple().tm_yday
+        
+        # 1. Deklinasyon Açısı
+        declination = 23.45 * math.sin(rad * (360/365.0) * (day_of_year - 81))
+
+        # 2. Zaman Denklemi
+        B = rad * (360/365.0) * (day_of_year - 81)
+        eot = 9.87 * math.sin(2*B) - 7.53 * math.cos(B) - 1.5 * math.sin(B)
+
+        # 3. Yerel Güneş Zamanı
+        lstm = 15 * 3  # GMT+3
+        time_correction = 4 * (longitude - lstm) + eot
+        local_time = date_time_obj.hour + date_time_obj.minute / 60.0
+        solar_time = local_time + time_correction / 60.0
+        
+        # 4. Saat Açısı (HRA)
+        hra = 15 * (solar_time - 12)
+
+        # 5. Yükseklik Açısı (Elevation)
+        sin_elevation = (math.sin(rad * latitude) * math.sin(rad * declination) + 
+                         math.cos(rad * latitude) * math.cos(rad * declination) * math.cos(rad * hra))
+        
+        # Matematiksel sınır kontrolü (-1 ile 1 arası olmalı)
+        if sin_elevation > 1: sin_elevation = 1
+        if sin_elevation < -1: sin_elevation = -1
+        
+        elevation = math.asin(sin_elevation) * deg
+        return elevation
+
+    # --- ARAYÜZ (UI) ---
     st.header("🕵️ Visual Forensics: Gölge ve Işık Analizi")
     st.info("Bu modül, fotoğraftaki gölge boylarını astronomik verilerle kıyaslayarak fotoğrafın çekildiği saatin doğruluğunu test eder.")
 
@@ -2532,18 +2536,20 @@ def render_visual_forensics_module(api_key):
 
     with col1:
         st.subheader("1. İddia Edilen Veriler")
-        # Tarih ve Saat Seçimi
-        claim_date = st.date_input("İddia Edilen Tarih", datetime.now())
-        claim_time = st.time_input("İddia Edilen Saat", datetime.now().time())
+        # dt_mod.datetime.now() kullanarak güvenli tarih alma
+        simdi = dt_mod.datetime.now()
         
-        # Konum Seçimi (Basitlik için büyük şehirler, istenirse manuel girilebilir)
+        claim_date = st.date_input("İddia Edilen Tarih", simdi.date())
+        claim_time = st.time_input("İddia Edilen Saat", simdi.time())
+        
         city_coords = {
             "İstanbul": (41.0082, 28.9784),
             "Ankara": (39.9334, 32.8597),
             "İzmir": (38.4192, 27.1287),
             "Antalya": (36.8969, 30.7133),
-            "Aksaray": (38.37255, 34.02537),
-            "Erzurum": (39.9043, 41.2679)
+            "Erzurum": (39.9043, 41.2679),
+            "Diyarbakır": (37.9144, 40.2306),
+            "Trabzon": (41.0027, 39.7168)
         }
         city = st.selectbox("Olay Yeri", list(city_coords.keys()))
         lat, lon = city_coords[city]
@@ -2552,83 +2558,90 @@ def render_visual_forensics_module(api_key):
         st.subheader("2. Fotoğraf Ölçümleri")
         st.caption("Fotoğrafta boyunu bildiğiniz bir cisim (Örn: Trafik levhası ~2m) ve gölgesini ölçerek girin.")
         
-        obj_height = st.number_input("Cisim Boyu (Metre)", value=1.70, step=0.10, help="Örn: İnsan boyu 1.70m")
-        shadow_len = st.number_input("Fotoğraftaki Gölge Boyu (Metre)", value=1.70, step=0.10, help="Fotoğraftaki piksel oranından tahmin edilen gölge uzunluğu")
+        obj_height = st.number_input("Cisim Boyu (Metre)", value=1.70, step=0.10)
+        shadow_len = st.number_input("Fotoğraftaki Gölge Boyu (Metre)", value=1.70, step=0.10)
 
     if st.button("🔍 Analizi Başlat"):
-        # Tarih birleştirme
-        dt = datetime.combine(claim_date, claim_time)
+        # Tarih birleştirme (Güvenli Yöntem)
+        target_dt = dt_mod.datetime.combine(claim_date, claim_time)
         
         # 1. Astronomik Hesaplama
-        sun_elevation = calculate_sun_position(lat, lon, dt)
+        sun_elevation = calculate_sun_position_safe(lat, lon, target_dt)
         
         # Gece kontrolü
         if sun_elevation <= 0:
-            st.error("🌑 HATA: Girilen saatte güneş batmış durumda! Gölge oluşması imkansız.")
+            st.error(f"🌑 HATA: Girilen saatte ({claim_time.strftime('%H:%M')}) güneş batmış durumda! (Açı: {sun_elevation:.1f}°). Gölge oluşması imkansız.")
             return
 
         # 2. Beklenen Gölge Hesabı
-        # Gölge = Boy / tan(Güneş Açısı)
         rad_elevation = math.radians(sun_elevation)
+        # Tan(0) hatasını önleme
+        if rad_elevation == 0: rad_elevation = 0.0001
+        
         expected_shadow = obj_height / math.tan(rad_elevation)
         
         # 3. Sapma Hesabı
         diff = abs(expected_shadow - shadow_len)
-        error_rate = (diff / expected_shadow) * 100
+        error_rate = (diff / (expected_shadow + 0.001)) * 100 # Sıfıra bölünme önlemi
         
         # --- SONUÇ EKRANI ---
         st.divider()
         st.subheader("📊 Analiz Sonucu")
         
         c1, c2, c3 = st.columns(3)
-        c1.metric("Güneş Açısı (Elevation)", f"{sun_elevation:.1f}°")
+        c1.metric("Güneş Açısı", f"{sun_elevation:.1f}°")
         c2.metric("Beklenen Gölge", f"{expected_shadow:.2f} m")
         c3.metric("Ölçülen Gölge", f"{shadow_len:.2f} m")
         
-        # Görselleştirme (Basit Çizim)
+        # Görselleştirme
         fig = go.Figure()
         
         # Zemin
-        fig.add_shape(type="line", x0=-2, y0=0, x1=max(expected_shadow, shadow_len)+1, y1=0, line=dict(color="black", width=4))
+        max_x = max(expected_shadow, shadow_len) + 1
+        fig.add_shape(type="line", x0=-1, y0=0, x1=max_x, y1=0, line=dict(color="black", width=4))
         
-        # Cisim (Dikey Çizgi)
+        # Cisim
         fig.add_trace(go.Scatter(x=[0, 0], y=[0, obj_height], mode="lines", name="Cisim", line=dict(color="blue", width=6)))
         
-        # Beklenen Gölge (Yeşil Çizgi)
-        fig.add_trace(go.Scatter(x=[0, expected_shadow], y=[0, 0], mode="lines", name="Beklenen Gölge (Bilimsel)", line=dict(color="green", width=4, dash="dash")))
+        # Beklenen Gölge
+        fig.add_trace(go.Scatter(x=[0, expected_shadow], y=[0, 0], mode="lines", name="Beklenen (Bilimsel)", line=dict(color="green", width=4, dash="dash")))
         
-        # Ölçülen Gölge (Kırmızı Çizgi)
-        fig.add_trace(go.Scatter(x=[0, shadow_len], y=[-0.1, -0.1], mode="lines", name="Fotoğraftaki Gölge", line=dict(color="red", width=4)))
+        # Ölçülen Gölge
+        fig.add_trace(go.Scatter(x=[0, shadow_len], y=[-0.05, -0.05], mode="lines", name="Fotoğraftaki", line=dict(color="red", width=4)))
         
-        # Güneş Işını (Sarı)
+        # Güneş Işını
         fig.add_trace(go.Scatter(x=[expected_shadow, 0], y=[0, obj_height], mode="lines", name="Güneş Işını", line=dict(color="orange", width=1)))
 
-        fig.update_layout(title="Gölge Geometrisi Karşılaştırması", height=300, showlegend=True)
-        st.plotly_chart(fig)
+        fig.update_layout(
+            title="Gölge Analiz Grafiği", 
+            height=300, 
+            showlegend=True,
+            margin=dict(l=20, r=20, t=40, b=20)
+        )
+        st.plotly_chart(fig, use_container_width=True)
         
         # Yorum
         st.write("---")
         if error_rate < 15:
-            st.success("✅ **DOĞRULANDI:** Fotoğraftaki gölge boyu, iddia edilen saat ve konumla uyumlu. (Sapma makul seviyede)")
+            st.success("✅ **DOĞRULANDI:** Fotoğrafın saati ve gölge boyu fiziksel olarak uyumlu.")
         elif error_rate < 30:
-            st.warning("⚠️ **ŞÜPHELİ:** Gölge boyunda uyumsuzluk var. Ölçüm hatası veya 30-60 dakikalık saat farkı olabilir.")
+            st.warning("⚠️ **ŞÜPHELİ:** Gölge boyunda %15-30 sapma var. Saat farkı veya ölçüm hatası olabilir.")
         else:
-            st.error(f"🚨 **TUTARSIZLIK TESPİT EDİLDİ:** İddia edilen saatte gölgenin **{expected_shadow:.2f} metre** olması gerekirdi. Ancak fotoğrafta **{shadow_len:.2f} metre**. Bu, saatin yanlış olduğunu veya fotoğrafın başka bir zamanda çekildiğini gösterir.")
+            st.error(f"🚨 **TUTARSIZLIK:** İddia edilen saatte gölgenin **{expected_shadow:.2f}m** olması gerekirdi. Ancak **{shadow_len:.2f}m** ölçüldü. Bu ciddi bir çelişkidir.")
             
             if api_key:
                 prompt = f"""
-                GÖREV: Bir adli bilişim uzmanı gibi rapor yaz.
-                DURUM: Bir fotoğrafın çekildiği saat doğrulanmaya çalışılıyor.
+                GÖREV: Adli bilişim uzmanı raporu yaz.
                 KONUM: {city}
-                TARİH/SAAT: {dt}
+                TARİH: {target_dt}
                 GÜNEŞ AÇISI: {sun_elevation:.1f} derece
                 BEKLENEN GÖLGE: {expected_shadow:.2f} m
                 FOTOĞRAFTAKİ GÖLGE: {shadow_len:.2f} m
-                SONUÇ: %{error_rate:.1f} oranında sapma var.
                 
-                Açıkla: Bu sapma ne anlama geliyor? Güneş aslında daha mı tepedeydi yoksa daha mı alçaktaydı? Fotoğraf iddia edilenden daha erken mi yoksa geç mi çekilmiş olabilir?
+                YORUM: Bu sapma ne anlama geliyor? Güneş aslında daha mı alçaktaydı/yüksekteydi? Fotoğrafın saati iddia edilenden ne kadar farklı olabilir?
                 """
                 st.markdown(f"**🤖 AI Uzman Görüşü:** {get_ai_response(prompt, api_key)}")
+
 
 
 
