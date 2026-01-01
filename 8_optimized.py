@@ -2271,7 +2271,7 @@ def main():
         api_key = st.text_input("Google Gemini API Key", type="password")
         st.caption(f"Kütüphane Sürümü: {lib_ver}")
         
-        st.divider(
+        st.divider()
         
         if st.button("🗑️ Ekranı Temizle"):
             for key in st.session_state.keys():
