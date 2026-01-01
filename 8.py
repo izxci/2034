@@ -1768,9 +1768,9 @@ def render_forensic_map(api_key):
 
 
 def render_temporal_law_machine(api_key):
-	import datetime as dt # Çakışmayı önlemek için güvenli import
+	import datetime as dtss # Çakışmayı önlemek için güvenli import
     st.info("🕰️ **Mevzuat Zaman Makinesi:** Olayın yaşandığı tarihe geri döner. O gün yürürlükte olan (şu an mülga) kanunları, tüzükleri ve Yargıtay içtihatlarını bugünkülerle kıyaslar.")
-
+	
     # --- 0. MODEL SEÇİCİ ---
     def get_best_model():
         try:
@@ -1788,7 +1788,7 @@ def render_temporal_law_machine(api_key):
         st.markdown("### ⚙️ Zaman Koordinatları")
         
         # Tarih Seçimi (Varsayılan: 1990'lar)
-        target_date = st.date_input("Olay Tarihi", dt.date(1995, 6, 15))
+        target_date = st.date_input("Olay Tarihi", dtss.date(1995, 6, 15))
         
         topic = st.selectbox("Hukuki Konu", [
             "Gayrimenkul Devri (Tapu İptal)", 
