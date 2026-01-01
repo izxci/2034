@@ -14,6 +14,7 @@ import importlib.metadata
 from docx import Document
 from fpdf import FPDF
 import urllib.parse
+import concurrent.futures
 from gtts import gTTS
 import speech_recognition as sr
 import matplotlib.pyplot as plt
@@ -723,7 +724,119 @@ def render_deepfake_module(api_key):
         st.warning("Lütfen 'PIL', 'SpeechRecognition' kütüphanelerinin yüklü olduğundan ve 'TAGS' importunun yapıldığından emin olun.")
 
 
+def generate_dork_category(category, target_name, city):
+    """Belirli bir kategori için gelişmiş arama linkleri (Dorks) üretir."""
+    # Simüle edilmiş işlem süresi (Threading etkisini görmek için)
+    time.sleep(0.5) 
+    
+    links = []
+    base_url = "https://www.google.com/search?q="
+    name_slug = target_name.replace(" ", "+")
+    
+    if category == "social":
+        # Sosyal Medya Taraması
+        links.append(f"[📸 Instagram: {target_name}]({base_url}site:instagram.com+%22{name_slug}%22)")
+        links.append(f"[💼 LinkedIn: {target_name}]({base_url}site:linkedin.com/in/+%22{name_slug}%22)")
+        links.append(f"[🐦 Twitter/X: {target_name}]({base_url}site:twitter.com+%22{name_slug}%22)")
+        links.append(f"[👤 Facebook: {target_name}]({base_url}site:facebook.com+%22{name_slug}%22)")
+        
+    elif category == "business":
+        # Ticari Varlık ve Şirket Taraması
+        links.append(f"[🏢 Ticaret Sicil: {target_name}]({base_url}%22{name_slug}%22+site:ticaretsicil.gov.tr)")
+        links.append(f"[📄 Resmi Gazete: {target_name}]({base_url}%22{name_slug}%22+site:resmigazete.gov.tr)")
+        links.append(f"[🤝 Şirket Ortaklıkları]({base_url}%22{name_slug}%22+kurucu+ortak+sahibi)")
+        
+    elif category == "assets":
+        # Mal Varlığı ve Lüks Yaşam İzi (Tatil, Araba vb.)
+        links.append(f"[🏖️ Tatil/Otel Yorumları]({base_url}%22{name_slug}%22+otel+tatil+gezi)")
+        links.append(f"[🚗 Araba/Satış İlanları]({base_url}%22{name_slug}%22+sahibinden+satılık)")
+        links.append(f"[🎓 Mezuniyet/Okul]({base_url}%22{name_slug}%22+mezun+okul+lise+üniversite)")
+        
+    return category, links
 
+def render_osint_module(api_key):
+    st.info("Hedef kişinin (Borçlu, Davalı) dijital ayak izlerini takip edin. Sistem 'Threading' teknolojisiyle aynı anda sosyal medya, ticaret sicil ve mal varlığı taraması başlatır.")
+    
+    col_input, col_results = st.columns([1, 2])
+    
+    with col_input:
+        st.markdown("#### 🎯 Hedef Tanımla")
+        target_name = st.text_input("Ad Soyad / Şirket Adı", placeholder="Örn: Ahmet Yılmaz")
+        target_city = st.text_input("Şehir (Opsiyonel)", placeholder="Örn: İstanbul")
+        
+        start_scan = st.button("🚀 İstihbarat Taramasını Başlat", type="primary")
+        
+        st.markdown("---")
+        st.caption("⚠️ **Yasal Uyarı:** Bu modül sadece halka açık verileri (Open Source) tarar. KVKK sınırları içinde kullanınız.")
+
+    with col_results:
+        if start_scan and target_name:
+            st.write(f"📡 **'{target_name}'** için çok kanallı tarama başlatılıyor...")
+            
+            # --- THREADING (Çoklu İş Parçacığı) BAŞLANGICI ---
+            # Sosyal medya, İş ve Varlık taramalarını aynı anda yapar
+            results = {}
+            
+            with st.spinner("Veri madenciliği yapılıyor (Social + Business + Assets)..."):
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    # Görevleri tanımla
+                    t1 = executor.submit(generate_dork_category, "social", target_name, target_city)
+                    t2 = executor.submit(generate_dork_category, "business", target_name, target_city)
+                    t3 = executor.submit(generate_dork_category, "assets", target_name, target_city)
+                    
+                    # Sonuçları topla
+                    for future in concurrent.futures.as_completed([t1, t2, t3]):
+                        cat, links = future.result()
+                        results[cat] = links
+            
+            st.success("✅ Tarama Tamamlandı! Bulunan İzler:")
+            
+            # Sonuçları Göster
+            tab_social, tab_business, tab_assets = st.tabs(["📸 Sosyal Medya", "🏢 Ticari Varlık", "🏖️ Yaşam Tarzı"])
+            
+            with tab_social:
+                st.markdown("### Sosyal Ağ Taraması")
+                for link in results.get("social", []):
+                    st.markdown(f"- {link}", unsafe_allow_html=True)
+                st.info("💡 İpucu: 'Borcum yok' diyen kişinin Instagram'da gizli hikayesi olabilir.")
+
+            with tab_business:
+                st.markdown("### Ticari Sicil & Resmi Kayıtlar")
+                for link in results.get("business", []):
+                    st.markdown(f"- {link}", unsafe_allow_html=True)
+                st.info("💡 İpucu: Üzerine kayıtlı şirket veya ortaklıkları buradan yakalayabilirsiniz.")
+
+            with tab_assets:
+                st.markdown("### Lüks Yaşam & Varlık İzleri")
+                for link in results.get("assets", []):
+                    st.markdown(f"- {link}", unsafe_allow_html=True)
+                st.info("💡 İpucu: Otel yorumları veya 2. el satış ilanları gizli varlıkları ele verebilir.")
+
+            # --- AI ANALİZ KISMI ---
+            st.divider()
+            st.markdown("#### 🧠 İstihbarat Analizi")
+            evidence_text = st.text_area("Bulduğunuz şüpheli bilgiyi buraya yapıştırın (Örn: Instagram biyografisi veya Ticaret Sicil kaydı):", height=100)
+            
+            if st.button("🕵️ Delil Analizi Yap"):
+                if not api_key:
+                    st.error("API Anahtarı gerekli.")
+                else:
+                    genai.configure(api_key=api_key)
+                    model = genai.GenerativeModel('gemini-pro')
+                    prompt = f"""
+                    GÖREV: Bir OSINT (Açık Kaynak İstihbaratı) uzmanısın.
+                    HEDEF KİŞİ: {target_name}
+                    BULUNAN VERİ: "{evidence_text}"
+                    
+                    SORU: 
+                    1. Bu veri, kişinin "borç ödemekten kaçınma" veya "mal kaçırma" şüphesini destekler mi?
+                    2. Hukuki olarak bu veri delil dosyasında nasıl kullanılabilir?
+                    
+                    Kısa ve net cevap ver.
+                    """
+                    with st.spinner("Yapay zeka veriyi yorumluyor..."):
+                        response = model.generate_content(prompt)
+                        st.write(response.text)
 
 
 # --- ANA UYGULAMA ---
@@ -828,7 +941,7 @@ def main():
 
     # 3. SATIR: Simülasyon ve İleri Düzey Risk (YENİ EKLENDİ)
     st.markdown("### 🔮 Simülasyon & Risk Analizi")
-    tab_checkup, tab_timemachine, tab_aym, tab_deepfake = st.tabs(["🏥 Kurumsal Check-up", "⏳ Zaman Makinesi", "⚖️ AYM & AİHM Testi", "🕵️ Deepfake Kontrol"])
+    tab_checkup, tab_timemachine, tab_aym, tab_deepfake, tab_osyn = st.tabs(["🏥 Kurumsal Check-up", "⏳ Zaman Makinesi", "⚖️ AYM & AİHM Testi", "🕵️ Deepfake Kontrol", "🌐 OSINT (İstihbarat)"])
 
     # --- SEKMELERİN İÇERİKLERİ ---
     
@@ -848,6 +961,10 @@ def main():
 
     with tab_deepfake:  # <--- YENİ EKLENEN KISIM
         render_deepfake_module(api_key)
+
+    with tab_osyn:
+        render_osint_module(api_key) # <--- YENİ FONKSİYON ÇAĞRISI
+        
 
     # --- TAB İÇERİKLERİ ---
 
