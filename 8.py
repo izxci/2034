@@ -893,7 +893,13 @@ def render_precedent_alert_module(api_key):
                 
                 with st.spinner("Yapay Zeka, yeni kararları davalarınızla çapraz sorguluyor..."):
                     genai.configure(api_key=api_key)
-                    model = genai.GenerativeModel('gemini-1.5-flash')
+                    
+                    # --- HATA DÜZELTME KISMI ---
+                    # Önce 1.5 Flash dener, hata verirse Pro'ya geçer
+                    try:
+                        model = genai.GenerativeModel('gemini-1.5-flash')
+                    except:
+                        model = genai.GenerativeModel('gemini-pro')
                     
                     # Tüm davaları ve yeni kararları tek bir promptta birleştiriyoruz
                     cases_str = str(st.session_state.my_cases)
@@ -918,23 +924,30 @@ def render_precedent_alert_module(api_key):
                     AKSİYON: [Avukat hemen ne yapmalı? Örn: Ek beyan sun, davayı ıslah et]
                     """
                     
-                    response = model.generate_content(prompt)
-                    
-                    # Sonuçları Ayrıştır ve Göster
-                    st.divider()
-                    st.markdown("### 🚨 Tespit Edilen Riskler ve Fırsatlar")
-                    
-                    # AI Cevabını daha şık göstermek için
-                    alerts = response.text.split("UYARI:")
-                    for alert in alerts:
-                        if alert.strip():
-                            # Renklendirme mantığı
-                            if "KRİTİK" in alert:
-                                st.error(f"**UYARI:{alert}**")
-                            elif "FIRSAT" in alert:
-                                st.success(f"**UYARI:{alert}**")
-                            else:
-                                st.warning(f"**UYARI:{alert}**")
+                    try:
+                        response = model.generate_content(prompt)
+                        
+                        # Sonuçları Ayrıştır ve Göster
+                        st.divider()
+                        st.markdown("### 🚨 Tespit Edilen Riskler ve Fırsatlar")
+                        
+                        # AI Cevabını daha şık göstermek için
+                        alerts = response.text.split("UYARI:")
+                        for alert in alerts:
+                            if alert.strip():
+                                # Renklendirme mantığı
+                                if "KRİTİK" in alert:
+                                    st.error(f"**UYARI:{alert}**")
+                                elif "FIRSAT" in alert:
+                                    st.success(f"**UYARI:{alert}**")
+                                else:
+                                    st.warning(f"**UYARI:{alert}**")
+                                    
+                    except Exception as e:
+                        # Eğer model üretimi sırasında hata olursa burası yakalar
+                        st.error("AI Servisine bağlanırken geçici bir hata oluştu. Lütfen tekrar deneyin veya 'gemini-pro' modelini kullandığınızdan emin olun.")
+                        st.caption(f"Teknik Hata Detayı: {str(e)}")
+
 
 
 # --- ANA UYGULAMA ---
