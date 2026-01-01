@@ -2294,26 +2294,58 @@ def main():
                 "🧐 Rapor Denetçisi", "🏛️ Kurumsal Hafıza"
             ])
 
-    # --- C. DOSYA YÜKLEME ALANI (HER ZAMAN GÖRÜNÜR) ---
+    # ==========================================
+    # C. AKILLI DOSYA YÜKLEME ALANI (DİNAMİK)
+    # ==========================================
+    
     st.info(f"📍 Şu anki Modül: **{secilen_modul}**")
     
-    # Sadece bazı modüllerde dosya yükleme alanını gösterelim veya her zaman gösterelim
-    uploaded_file = st.file_uploader("Dosya Yükle (UDF/PDF) - Analiz İçin", type=['udf', 'pdf'])
+    # Hangi modüllerde dosya yükleme kutusu görünsün?
+    dosya_gerektiren_moduller = [
+        "📋 Analiz", 
+        "💬 Sohbet", 
+        "✍️ Dilekçe Yaz", 
+        "🕸️ İlişki Ağı", 
+        "📝 Sözleşme Analiz",
+        "⚔️ Belge Kıyasla",
+        "🧐 Rapor Denetçisi",
+        "🏛️ UYAP Analiz"
+    ]
 
-    if uploaded_file and st.session_state.get('last_file_id') != uploaded_file.file_id:
-        with st.spinner("Dosya okunuyor..."):
-            file_bytes = BytesIO(uploaded_file.getvalue())
-            ext = uploaded_file.name.split('.')[-1].lower()
-            raw_text = parse_udf(file_bytes) if ext == 'udf' else parse_pdf(file_bytes)
-            st.session_state.doc_text = raw_text
-            st.session_state.last_file_id = uploaded_file.file_id
-            st.session_state.messages = [] # Yeni dosya gelince sohbeti sıfırla
+    # Eğer seçilen modül listedeyse yükleyiciyi göster
+    if secilen_modul in dosya_gerektiren_moduller:
+        uploaded_file = st.file_uploader(f"📂 {secilen_modul} için Dosya Yükle (UDF/PDF)", type=['udf', 'pdf'])
 
-    if st.session_state.doc_text.startswith(("HATA", "UYARI")):
-        st.warning(st.session_state.doc_text)
+        if uploaded_file and st.session_state.get('last_file_id') != uploaded_file.file_id:
+            with st.spinner("Dosya okunuyor ve hafızaya alınıyor..."):
+                file_bytes = BytesIO(uploaded_file.getvalue())
+                ext = uploaded_file.name.split('.')[-1].lower()
+                
+                # Dosya türüne göre okuma
+                if ext == 'udf':
+                    raw_text = parse_udf(file_bytes)
+                else:
+                    raw_text = parse_pdf(file_bytes)
+                
+                st.session_state.doc_text = raw_text
+                st.session_state.last_file_id = uploaded_file.file_id
+                st.session_state.messages = [] # Yeni dosya gelince sohbeti sıfırla
+                st.success(f"✅ {uploaded_file.name} başarıyla yüklendi!")
+
+        # Dosya yüklendiyse veya hafızada metin varsa uyarı/bilgi göster
+        if st.session_state.doc_text:
+            if st.session_state.doc_text.startswith(("HATA", "UYARI")):
+                st.warning(st.session_state.doc_text)
+            else:
+                st.caption(f"📄 Aktif Belge Uzunluğu: {len(st.session_state.doc_text)} karakter")
+                
+        # Metadata çıkarma (Sadece dosya varsa)
+        auto_data = extract_metadata(st.session_state.doc_text)
     
-    # Metadata çıkarma (Analiz modülü için gerekli)
-    auto_data = extract_metadata(st.session_state.doc_text)
+    else:
+        # Dosya gerekmeyen modüllerde boş veri döndür ki kod patlamasın
+        auto_data = {"mahkeme": "", "esas": "", "karar": "", "tarih": ""}
+
 
     # ==========================================
     # D. MODÜL YÖNLENDİRİCİSİ (ROUTER)
