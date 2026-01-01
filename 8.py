@@ -939,6 +939,137 @@ def render_precedent_alert_module(api_key):
                         st.info("Lütfen API anahtarınızın 'Generative AI' servisine erişimi olduğundan emin olun.")
 
 
+def render_owner_mode(api_key):
+    st.info("👑 **Sahip Modu (Web):** Bilgisayarınızdaki bir klasörün içindeki **tüm dosyaları seçip (Ctrl+A)** buraya sürükleyin. Yapay zeka hepsini okuyup analiz edecektir.")
+
+    # --- 1. DOSYA OKUMA MOTORU (PDF, WORD, UYAP, OCR) ---
+    def get_file_text(file_obj, api_key_for_ocr):
+        """Yüklenen dosya objesinden metin çıkarır."""
+        filename = file_obj.name.lower()
+        file_bytes = file_obj.read() # Dosyayı bayt olarak oku
+        text = ""
+        
+        try:
+            # A) PDF
+            if filename.endswith('.pdf'):
+                pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
+                for page in pdf_reader.pages:
+                    text += page.extract_text() + "\n"
+            
+            # B) WORD (DOCX)
+            elif filename.endswith('.docx'):
+                doc = Document(io.BytesIO(file_bytes))
+                text = "\n".join([p.text for p in doc.paragraphs])
+            
+            # C) UYAP (UDF) - Avukatlar için kritik
+            elif filename.endswith('.udf'):
+                try:
+                    with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
+                        text = "".join(ET.fromstring(z.read('content.xml')).itertext())
+                except:
+                    text = "".join(ET.fromstring(file_bytes).itertext())
+            
+            # D) RESİM (OCR - GEMINI VISION)
+            elif filename.endswith(('.png', '.jpg', '.jpeg', '.tiff', '.bmp')):
+                if api_key_for_ocr:
+                    # Resmi tekrar aç
+                    image = Image.open(io.BytesIO(file_bytes))
+                    # Gemini 1.5 Flash (Hızlı ve Vision destekli)
+                    model = genai.GenerativeModel('gemini-1.5-flash')
+                    response = model.generate_content(["Bu resimdeki yazıları birebir metne dök:", image])
+                    text = f"[RESİM İÇERİĞİ]:\n{response.text}"
+            
+            # E) DÜZ METİN
+            else:
+                text = file_bytes.decode("utf-8", errors='ignore')
+                
+            return text
+        except Exception as e:
+            return f"[Okuma Hatası - {filename}]: {str(e)}"
+
+    # --- 2. ARAYÜZ ---
+    if 'web_memory' not in st.session_state: st.session_state.web_memory = ""
+    if 'web_history' not in st.session_state: st.session_state.web_history = []
+
+    col_upload, col_chat = st.columns([1, 2])
+
+    # --- SOL: ÇOKLU YÜKLEME ALANI ---
+    with col_upload:
+        st.markdown("### 📤 Dosyaları Buraya Bırak")
+        # accept_multiple_files=True sayesinde klasördeki her şeyi seçip atabilirsiniz
+        uploaded_files = st.file_uploader("Klasördeki dosyaları seçip sürükleyin (PDF, UDF, Resim...)", accept_multiple_files=True)
+        
+        if st.button("🧠 Dosyaları Analiz Et", type="primary"):
+            if not uploaded_files:
+                st.warning("Lütfen dosya sürükleyin.")
+            elif not api_key:
+                st.error("API Anahtarı gerekli.")
+            else:
+                genai.configure(api_key=api_key)
+                full_text = ""
+                
+                # İlerleme Çubuğu
+                bar = st.progress(0)
+                status = st.empty()
+                
+                for i, file in enumerate(uploaded_files):
+                    status.text(f"İnceleniyor: {file.name}...")
+                    # Dosyayı oku
+                    content = get_file_text(file, api_key)
+                    full_text += f"\n=== DOSYA: {file.name} ===\n{content}\n"
+                    bar.progress((i + 1) / len(uploaded_files))
+                
+                st.session_state.web_memory = full_text
+                st.session_state.web_history = [] # Yeni yüklemede sohbeti sıfırla
+                status.text("✅ Analiz Tamamlandı!")
+                st.success(f"{len(uploaded_files)} belge hafızaya alındı.")
+
+        # Hafıza Temizleme
+        if st.session_state.web_memory:
+            st.info(f"Hafıza: {len(st.session_state.web_memory)} karakter veri.")
+            if st.button("🗑️ Temizle"):
+                st.session_state.web_memory = ""
+                st.rerun()
+
+    # --- SAĞ: SOHBET EKRANI ---
+    with col_chat:
+        st.markdown("### 💬 Belgelerle Sohbet")
+        
+        for msg in st.session_state.web_history:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+
+        if prompt := st.chat_input("Belgeler hakkında soru sor..."):
+            if not st.session_state.web_memory:
+                st.warning("👈 Önce sol taraftan dosyaları yükleyip analiz etmelisin.")
+            else:
+                st.session_state.web_history.append({"role": "user", "content": prompt})
+                with st.chat_message("user"):
+                    st.markdown(prompt)
+
+                with st.chat_message("assistant"):
+                    with st.spinner("Belgeler taranıyor..."):
+                        try:
+                            # Büyük veri için Flash modeli idealdir
+                            model = genai.GenerativeModel('gemini-1.5-flash')
+                            
+                            # Context limiti (Token aşımını önlemek için)
+                            context = st.session_state.web_memory[:100000]
+                            
+                            final_prompt = f"""
+                            GÖREV: Aşağıdaki yüklenen belge içeriklerine dayanarak soruyu cevapla.
+                            
+                            BELGE İÇERİKLERİ:
+                            {context}
+                            
+                            SORU: {prompt}
+                            """
+                            
+                            response = model.generate_content(final_prompt)
+                            st.markdown(response.text)
+                            st.session_state.web_history.append({"role": "assistant", "content": response.text})
+                        except Exception as e:
+                            st.error(f"Hata: {e}")
 
 
 
@@ -1044,7 +1175,7 @@ def main():
 
     # 3. SATIR: Simülasyon ve İleri Düzey Risk (YENİ EKLENDİ)
     st.markdown("### 🔮 Simülasyon & Risk Analizi")
-    tab_checkup, tab_timemachine, tab_aym, tab_deepfake, tab_osyn, tab_sxx = st.tabs(["🏥 Kurumsal Check-up", "⏳ Zaman Makinesi", "⚖️ AYM & AİHM Testi", "🕵️ Deepfake Kontrol", "🌐 OSINT (İstihbarat)", "🔔 Emsal Alarm"])
+    tab_checkup, tab_timemachine, tab_aym, tab_deepfake, tab_osyn, tab_sxx, tab_sah = st.tabs(["🏥 Kurumsal Check-up", "⏳ Zaman Makinesi", "⚖️ AYM & AİHM Testi", "🕵️ Deepfake Kontrol", "🌐 OSINT (İstihbarat)", "🔔 Emsal Alarm", "👑 Sahip Modu"])
 
     # --- SEKMELERİN İÇERİKLERİ ---
     
@@ -1068,7 +1199,8 @@ def main():
     with tab_osyn:
         render_osint_module(api_key) # <--- YENİ FONKSİYON ÇAĞRISI
 
-    with tab_sxx: render_precedent_alert_module(api_key)        
+    with tab_sxx: render_precedent_alert_module(api_key)
+    with tab_sah: render_owner_mode(api_key)
 
     # --- TAB İÇERİKLERİ ---
 
