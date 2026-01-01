@@ -1501,6 +1501,7 @@ def main():
             # Mevcut Listeyi Göster
             if st.session_state.mevzuat_takip_listesi:
                 st.markdown("###### 📝 Aktif Takip Listesi")
+                import pandas as pd
                 df_takip = pd.DataFrame(st.session_state.mevzuat_takip_listesi)
                 st.table(df_takip)
             else:
