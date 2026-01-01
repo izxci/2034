@@ -1993,6 +1993,230 @@ def render_expert_report_auditor(api_key):
                     output_box.error(f"Analiz Hatası: {e}")
 
          
+import pandas as pd
+import io
+from datetime import datetime
+
+def render_corporate_memory(api_key):
+    st.info("🏛️ **Kurumsal Hafıza V2 (Akıllı Arşiv & OCR):** Belgeleri tarar, verileri ayıklar ve Excel'e işler. Eski Excel dosyanızı yükleyerek veritabanını büyütebilirsiniz.")
+
+    # --- KÜTÜPHANE KONTROLLERİ ---
+    try:
+        import pandas as pd
+        from pypdf import PdfReader
+        from docx import Document
+        from PIL import Image
+    except ImportError:
+        st.error("Bu modül için 'pandas', 'openpyxl', 'pypdf', 'python-docx', 'Pillow' kütüphaneleri gereklidir.")
+        return
+
+    # --- 0. OTURUM VE VERİ YÖNETİMİ ---
+    if "archive_df" not in st.session_state:
+        # Boş bir DataFrame şablonu
+        st.session_state.archive_df = pd.DataFrame(columns=["Tarih", "Konu", "Özet", "Detay", "İlgili Kişi/Kurum", "Dosya Adı"])
+
+    # --- SEKME YAPISI ---
+    tab_upload, tab_query = st.tabs(["📂 Belge İşle & Arşivle", "🔍 Arşivde Sorgu Yap"])
+
+    # ==========================================
+    # 1. SEKME: BELGE İŞLEME VE EXCEL YÖNETİMİ
+    # ==========================================
+    with tab_upload:
+        col_db, col_process = st.columns([1, 1])
+
+        # A. MEVCUT VERİTABANINI YÜKLE
+        with col_db:
+            st.markdown("### 1. Mevcut Arşivi Yükle (Excel)")
+            uploaded_excel = st.file_uploader("Önceki 'Kurumsal_Hafiza.xlsx' dosyanızı yükleyin", type=["xlsx"])
+            
+            if uploaded_excel:
+                try:
+                    loaded_df = pd.read_excel(uploaded_excel)
+                    # Sütun kontrolü
+                    required_cols = ["Tarih", "Konu", "Özet", "Detay", "İlgili Kişi/Kurum", "Dosya Adı"]
+                    if all(col in loaded_df.columns for col in required_cols):
+                        st.session_state.archive_df = loaded_df
+                        st.success(f"✅ Veritabanı Yüklendi! Toplam Kayıt: {len(loaded_df)}")
+                    else:
+                        st.error("Yüklenen Excel formatı uyumsuz. Lütfen bu sistemden indirdiğiniz dosyayı kullanın.")
+                except Exception as e:
+                    st.error(f"Excel okuma hatası: {e}")
+            
+            # Mevcut Veriyi Göster
+            st.markdown("#### 📊 Mevcut Veritabanı")
+            st.dataframe(st.session_state.archive_df, height=200, use_container_width=True)
+            
+            # İndirme Butonu
+            if not st.session_state.archive_df.empty:
+                excel_data = io.BytesIO()
+                st.session_state.archive_df.to_excel(excel_data, index=False)
+                st.download_button(
+                    label="💾 Güncel Arşivi İndir (Excel)",
+                    data=excel_data.getvalue(),
+                    file_name="Kurumsal_Hafiza.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+
+        # B. YENİ BELGE İŞLEME
+        with col_process:
+            st.markdown("### 2. Yeni Belge Ekle (OCR & AI)")
+            files = st.file_uploader("Belgeleri Seçin (PDF, DOCX, JPG, PNG)", 
+                                   type=["pdf", "docx", "png", "jpg", "jpeg", "tiff"], 
+                                   accept_multiple_files=True)
+            
+            process_btn = st.button("⚙️ Belgeleri Analiz Et ve Tabloya Ekle", type="primary")
+
+            if process_btn and files:
+                if not api_key:
+                    st.error("Analiz için API Key gerekli.")
+                else:
+                    import google.generativeai as genai
+                    genai.configure(api_key=api_key)
+                    # Vision model (Resimler için) ve Text model
+                    model_vision = genai.GenerativeModel('gemini-1.5-flash') 
+                    
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    
+                    new_records = []
+                    
+                    for idx, file in enumerate(files):
+                        status_text.text(f"İşleniyor: {file.name}...")
+                        content_to_analyze = ""
+                        is_image = False
+                        image_data = None
+
+                        # 1. Dosya İçeriğini Oku
+                        try:
+                            if file.type == "application/pdf":
+                                reader = PdfReader(file)
+                                for page in reader.pages:
+                                    content_to_analyze += page.extract_text() + "\n"
+                            
+                            elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+                                doc = Document(file)
+                                for para in doc.paragraphs:
+                                    content_to_analyze += para.text + "\n"
+                            
+                            elif file.type in ["image/png", "image/jpeg", "image/tiff"]:
+                                is_image = True
+                                image_data = Image.open(file)
+                            
+                            # UDF Notu: UDF binary formatı karmaşıktır, genelde XML parse edilir. 
+                            # Basitlik adına burada UDF'yi atlıyoruz veya metin gibi deniyoruz.
+                            
+                        except Exception as e:
+                            st.warning(f"{file.name} okunamadı: {e}")
+                            continue
+
+                        # 2. AI ile Veri Çıkarma (Extraction)
+                        try:
+                            prompt = """
+                            Aşağıdaki belgeden şu bilgileri JSON formatında çıkar:
+                            1. Tarih (Belge tarihi, yoksa BUGÜN. Format: GG.AA.YYYY)
+                            2. Konu (Belgenin ana başlığı veya konusu)
+                            3. Ozet (İçeriğin 1-2 cümlelik özeti)
+                            4. Detay (Önemli hukuki detaylar, madde numaraları)
+                            5. Ilgili_Kisi (Belgede adı geçen kurum, kişi veya şirket)
+                            
+                            Cevabı sadece JSON olarak ver. Markdown kullanma.
+                            """
+                            
+                            response = None
+                            if is_image:
+                                # Resim OCR + Analiz
+                                response = model_vision.generate_content([prompt, image_data])
+                            else:
+                                # Metin Analizi
+                                if len(content_to_analyze) > 10: # Boş değilse
+                                    response = model_vision.generate_content(prompt + f"\n\nBELGE METNİ:\n{content_to_analyze[:30000]}")
+                            
+                            if response:
+                                # JSON Temizleme (Bazen AI ```json ... ``` ekler)
+                                text_res = response.text.replace("```json", "").replace("```", "").strip()
+                                import json
+                                data = json.loads(text_res)
+                                
+                                # Mükerrer Kontrolü (Konu + Tarih)
+                                is_duplicate = False
+                                if not st.session_state.archive_df.empty:
+                                    # Basit bir kontrol: Aynı Konu ve Tarih var mı?
+                                    check = st.session_state.archive_df[
+                                        (st.session_state.archive_df['Konu'] == data.get('Konu', '-')) & 
+                                        (st.session_state.archive_df['Tarih'] == data.get('Tarih', '-'))
+                                    ]
+                                    if not check.empty:
+                                        is_duplicate = True
+                                
+                                if is_duplicate:
+                                    st.warning(f"⚠️ Mükerrer Kayıt Atlandı: {file.name} ({data.get('Konu')})")
+                                else:
+                                    new_records.append({
+                                        "Tarih": data.get("Tarih", "-"),
+                                        "Konu": data.get("Konu", "-"),
+                                        "Özet": data.get("Ozet", "-"),
+                                        "Detay": data.get("Detay", "-"),
+                                        "İlgili Kişi/Kurum": data.get("Ilgili_Kisi", "-"),
+                                        "Dosya Adı": file.name
+                                    })
+                                    
+                        except Exception as e:
+                            st.error(f"AI Analiz Hatası ({file.name}): {e}")
+
+                        progress_bar.progress((idx + 1) / len(files))
+
+                    # 3. Tabloyu Güncelle
+                    if new_records:
+                        new_df = pd.DataFrame(new_records)
+                        st.session_state.archive_df = pd.concat([st.session_state.archive_df, new_df], ignore_index=True)
+                        st.success(f"✅ {len(new_records)} yeni belge başarıyla arşivlendi!")
+                        st.rerun() # Tabloyu yenilemek için
+
+    # ==========================================
+    # 2. SEKME: SORGULAMA (CHAT WITH EXCEL)
+    # ==========================================
+    with tab_query:
+        st.markdown("### 🧠 Arşivde Semantik Arama")
+        
+        if st.session_state.archive_df.empty:
+            st.info("Sorgu yapmak için önce 'Belge İşle' sekmesinden veri ekleyin veya Excel yükleyin.")
+        else:
+            query = st.text_input("Arşivde ne arıyorsunuz?", placeholder="Örn: Geçen sene Mehmet Bey ile yapılan sözleşmedeki cezai şart neydi?")
+            
+            if st.button("🔍 Ara ve Yanıtla", type="primary"):
+                if not api_key:
+                    st.error("API Key gerekli.")
+                else:
+                    with st.spinner("Arşiv taranıyor..."):
+                        try:
+                            import google.generativeai as genai
+                            genai.configure(api_key=api_key)
+                            model = genai.GenerativeModel('gemini-pro')
+                            
+                            # DataFrame'i JSON/Metin formatına çevirip AI'ya veriyoruz
+                            # Büyük verilerde sadece ilgili satırları filtrelemek gerekir ama şimdilik tümünü veriyoruz (Token limitine dikkat)
+                            context_data = st.session_state.archive_df.to_json(orient="records", force_ascii=False)
+                            
+                            prompt = f"""
+                            GÖREV: Sen bu kurumun hafızasısın. Aşağıdaki VERİTABANI'nı kullanarak kullanıcının sorusunu yanıtla.
+                            
+                            VERİTABANI (Excel Dökümü):
+                            {context_data}
+                            
+                            KULLANICI SORUSU: "{query}"
+                            
+                            KURALLAR:
+                            1. Sadece veritabanındaki bilgilere dayanarak cevap ver.
+                            2. Hangi tarihli ve hangi konulu belgeye dayandığını belirt.
+                            3. Eğer bilgi yoksa "Kayıtlarımda buna dair bilgi bulamadım" de.
+                            """
+                            
+                            response = model.generate_content(prompt)
+                            st.markdown(response.text)
+                            
+                        except Exception as e:
+                            st.error(f"Sorgu Hatası: {e}")
+
 
 
 
@@ -2102,8 +2326,8 @@ def main():
 
     # 4. SATIR: oyun değiştirici hamle menüsü (15 Sekme)
     st.markdown("### 🛠️ Temel Araçlar & Strateji")
-    tabx1, tabx2, tabx3 = st.tabs([
-        "🗺️ Adli Harita", "🕰️ Mevzuat Makinesi", "🧐 Rapor Denetçisi" 
+    tabx1, tabx2, tabx3, tabx4 = st.tabs([
+        "🗺️ Adli Harita", "🕰️ Mevzuat Makinesi", "🧐 Rapor Denetçisi", "🏛️ Kurumsal Hafıza" 
     ])
 
 
@@ -2138,6 +2362,7 @@ def main():
     with tabx1: render_forensic_map(api_key)
     with tabx2: render_temporal_law_machine(api_key)
     with tabx3: render_expert_report_auditor(api_key)
+    with tabx4: render_corporate_memory(api_key)
     # --- TAB İÇERİKLERİ ---
 
     with tab1:
