@@ -1074,110 +1074,153 @@ def render_owner_mode(api_key):
                         except Exception as e:
                             st.error(f"Cevap üretilemedi: {e}")
 
-def render_property_genealogy(api_key):
-    st.info("🌳 **Mülkiyet Soyağacı (Property Genealogy):** Bir taşınmazın 1920'den bugüne el değiştirme sürecini haritalandırır. AI, zincirdeki kopuklukları (intikali yapılmamış ölüler, kayıp mirasçılar) tespit eder.")
+import json # AI çıktısını işlemek için gerekli
 
+def render_property_genealogy(api_key):
+    st.info("🌳 **Mülkiyet Soyağacı (Otomatik):** Tapu senetlerini, kadastro tutanaklarını veya veraset ilamlarını yükleyin. Yapay zeka, belgeleri okuyup tarihsel akışı otomatik olarak grafiğe döker.")
+
+    # --- 1. İÇ DOSYA OKUYUCU (Bu modüle özel) ---
+    def get_genealogy_file_text(file_obj, api_key_for_ocr):
+        """Belgelerden metin ayıklar."""
+        filename = file_obj.name.lower()
+        file_bytes = file_obj.read()
+        text = ""
+        try:
+            if filename.endswith('.pdf'):
+                pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
+                for page in pdf_reader.pages: text += page.extract_text() + "\n"
+            elif filename.endswith('.docx'):
+                doc = Document(io.BytesIO(file_bytes))
+                text = "\n".join([p.text for p in doc.paragraphs])
+            elif filename.endswith(('.png', '.jpg', '.jpeg')):
+                if api_key_for_ocr:
+                    image = Image.open(io.BytesIO(file_bytes))
+                    model = genai.GenerativeModel('gemini-1.5-flash')
+                    response = model.generate_content(["Bu tapu/belgedeki tüm isimleri ve tarihleri oku:", image])
+                    text = response.text
+            else:
+                text = file_bytes.decode("utf-8", errors='ignore')
+            return text
+        except Exception as e:
+            return ""
+
+    # --- 2. STATE YÖNETİMİ ---
     if 'prop_history' not in st.session_state:
-        # Varsayılan Senaryo: Mardin'de Sorunlu Bir Arazi
+        # Varsayılan Demo Verisi
         st.session_state.prop_history = [
-            {"yil": "1924", "kimden": "HAZİNE", "kime": "Hacı Ömer (Kök Muris)", "islem": "Osmanlı Tapu Tescil", "durum": "Pasif"},
-            {"yil": "1955", "kimden": "Hacı Ömer", "kime": "Ahmet (Oğlu)", "islem": "Miras (Veraset İlamı Var)", "durum": "Pasif"},
-            {"yil": "1955", "kimden": "Hacı Ömer", "kime": "Mehmet (Oğlu)", "islem": "Miras (Veraset İlamı YOK - İntikal Yapılmadı)", "durum": "Kritik"},
-            {"yil": "1980", "kimden": "Ahmet (Oğlu)", "kime": "Veli (3. Şahıs)", "islem": "Satış", "durum": "Aktif"},
-            {"yil": "1995", "kimden": "Mehmet (Oğlu)", "kime": "?", "islem": "Ölüm (Mirasçılar Belirsiz)", "durum": "Kayıp Halka"},
+            {"yil": "1950", "kimden": "Hazine", "kime": "Ahmet (Dedem)", "islem": "Kadastro", "durum": "Pasif"},
+            {"yil": "1985", "kimden": "Ahmet (Dedem)", "kime": "Mehmet (Babam)", "islem": "Miras", "durum": "Aktif"}
         ]
 
-    col_graph, col_analysis = st.columns([2, 1])
+    # --- 3. ARAYÜZ ---
+    col_left, col_right = st.columns([1, 2])
 
-    # --- SOL KOLON: GÖRSEL SOYAĞACI ---
-    with col_graph:
-        st.markdown("### 🗺️ Tapu İntikal Haritası")
+    # SOL: YÜKLEME VE LİSTE
+    with col_left:
+        st.markdown("### 📂 Belge Yükle")
+        uploaded_files = st.file_uploader("Tapu, Veraset, Kadastro Belgesi (PDF/Resim)", accept_multiple_files=True)
         
-        # Graphviz (DOT Dili) ile Ağaç Oluşturma
-        graph_code = "digraph {"
-        graph_code += "\n  rankdir=LR;" # Soldan sağa akış
-        graph_code += "\n  node [shape=box, style=filled, fontname=\"Arial\"];"
-        
-        for item in st.session_state.prop_history:
-            # Renk Kodlaması
-            color = "lightgrey" # Geçmiş
-            if item["durum"] == "Aktif": color = "lightgreen" # Güncel Malik
-            if item["durum"] == "Kritik": color = "#ffcccc" # Sorunlu (Kırmızımsı)
-            if item["durum"] == "Kayıp Halka": color = "orange" # Bilinmiyor
-            
-            # Düğümleri Bağla
-            # Örn: "Hacı Ömer" -> "Ahmet" [label="1955 Miras"]
-            safe_kimden = item['kimden'].replace(" ", "_").replace("(", "").replace(")", "").replace(".", "")
-            safe_kime = item['kime'].replace(" ", "_").replace("(", "").replace(")", "").replace(".", "")
-            
-            graph_code += f'\n  "{item["kimden"]}" -> "{item["kime"]}" [label="{item["yil"]}\\n{item["islem"]}", fontsize=10];'
-            graph_code += f'\n  "{item["kime"]}" [fillcolor="{color}", label="{item["kime"]}\\n({item["durum"]})"];'
-            
-        graph_code += "\n}"
-        
-        st.graphviz_chart(graph_code)
-        
-        with st.expander("📝 Kayıt Ekle / Düzenle"):
-            c1, c2, c3, c4 = st.columns(4)
-            new_yil = c1.text_input("Yıl", "2024")
-            new_kimden = c2.text_input("Kimden", "Veli")
-            new_kime = c3.text_input("Kime", "Ali")
-            new_islem = c4.text_input("İşlem", "Satış")
-            
-            if st.button("Zincire Ekle"):
-                st.session_state.prop_history.append({
-                    "yil": new_yil, "kimden": new_kimden, "kime": new_kime, 
-                    "islem": new_islem, "durum": "Aktif"
-                })
-                st.rerun()
-            
-            if st.button("Sıfırla"):
-                st.session_state.prop_history = []
-                st.rerun()
-
-    # --- SAĞ KOLON: AI RİSK ANALİZİ ---
-    with col_analysis:
-        st.markdown("### 🕵️ Yapay Zeka Dedektifi")
-        st.write("Mevcut tapu zincirindeki hukuki boşlukları tarar.")
-        
-        if st.button("🔍 Zinciri Analiz Et", type="primary"):
-            if not api_key:
-                st.error("API Anahtarı gerekli.")
+        if st.button("⚡ Zinciri Otomatik Oluştur", type="primary"):
+            if not uploaded_files:
+                st.warning("Lütfen belge yükleyin.")
+            elif not api_key:
+                st.error("API Anahtarı eksik.")
             else:
-                with st.spinner("Tapu kayıtları taranıyor..."):
-                    # Veriyi metne dök
-                    chain_str = "\n".join([f"{x['yil']}: {x['kimden']} -> {x['kime']} ({x['islem']} - Durum: {x['durum']})" for x in st.session_state.prop_history])
+                with st.spinner("Belgeler okunuyor ve zincir kuruluyor..."):
+                    genai.configure(api_key=api_key)
                     
-                    prompt = f"""
-                    GÖREV: Sen uzman bir Tapu ve Kadastro avukatısın.
-                    Aşağıdaki mülkiyet zincirini analiz et ve "Mülkiyet Kopukluklarını" bul.
+                    # 1. Tüm metinleri birleştir
+                    full_text = ""
+                    for f in uploaded_files:
+                        full_text += f"\n--- BELGE: {f.name} ---\n" + get_genealogy_file_text(f, api_key)
                     
-                    TAPU ZİNCİRİ:
-                    {chain_str}
-                    
-                    ANALİZ İSTEĞİ:
-                    1. Hangi aşamada intikal yapılmamış?
-                    2. "Ölü" görünen ama tapuda hala adı geçen kimse var mı? (Kayıp Mirasçı Riski)
-                    3. Bu taşınmazı satın alacak birine ne tavsiye edersin?
-                    4. Hukuki risk puanı (10 üzerinden).
-                    """
-                    
-                    # Otomatik Model Seçici
+                    # 2. AI'dan JSON Formatında Zincir İste
                     try:
-                        active_model = "models/gemini-pro"
-                        for m in genai.list_models():
-                            if 'generateContent' in m.supported_generation_methods and 'gemini' in m.name:
-                                active_model = m.name
-                                break
+                        model = genai.GenerativeModel('gemini-1.5-flash') # Hızlı model
+                        prompt = f"""
+                        GÖREV: Aşağıdaki tapu ve kadastro belgelerindeki metinleri analiz et.
+                        Bir mülkiyet zinciri (tarihçesi) çıkar.
                         
-                        model = genai.GenerativeModel(active_model)
+                        BELGE İÇERİĞİ:
+                        {full_text[:50000]}
+                        
+                        ÇIKTI FORMATI (KESİNLİKLE SADECE JSON):
+                        Şu formatta bir JSON listesi ver:
+                        [
+                          {{"yil": "1990", "kimden": "Ali", "kime": "Veli", "islem": "Satış", "durum": "Pasif"}},
+                          {{"yil": "2023", "kimden": "Veli", "kime": "Ayşe", "islem": "Miras", "durum": "Aktif"}}
+                        ]
+                        
+                        KURALLAR:
+                        - "durum": Eğer kişi hala malikse "Aktif", devrettiyse veya öldüyse "Pasif", durumu belirsizse "Kritik" yaz.
+                        - Sadece JSON kodu döndür, açıklama yapma.
+                        """
+                        
                         response = model.generate_content(prompt)
                         
-                        st.success("Analiz Tamamlandı!")
-                        st.markdown(response.text)
+                        # JSON Temizleme (Markdown ```json ... ``` temizliği)
+                        clean_json = response.text.replace("```json", "").replace("```", "").strip()
+                        data = json.loads(clean_json)
                         
+                        if isinstance(data, list):
+                            st.session_state.prop_history = data
+                            st.success(f"{len(data)} adet işlem tespit edildi!")
+                            st.rerun()
+                        else:
+                            st.error("AI veriyi çözümleyemedi.")
+                            
                     except Exception as e:
-                        st.error(f"Hata: {e}")
+                        st.error(f"Zincir oluşturma hatası: {e}")
+
+        st.divider()
+        st.write("📋 **Tespit Edilen Liste:**")
+        st.dataframe(st.session_state.prop_history)
+        
+        if st.button("Listeyi Sıfırla"):
+            st.session_state.prop_history = []
+            st.rerun()
+
+    # SAĞ: GRAFİK VE ANALİZ
+    with col_right:
+        st.markdown("### 🗺️ Görsel Soyağacı")
+        
+        if st.session_state.prop_history:
+            # Graphviz Kodu Oluştur
+            graph_code = "digraph {"
+            graph_code += "\n  rankdir=LR;" 
+            graph_code += "\n  node [shape=box, style=filled, fontname=\"Arial\"];"
+            
+            for item in st.session_state.prop_history:
+                # Renkler
+                color = "white"
+                if item.get("durum") == "Aktif": color = "#d4edda" # Yeşilimsi
+                if item.get("durum") == "Kritik": color = "#f8d7da" # Kırmızımsı
+                if item.get("durum") == "Pasif": color = "#e2e3e5" # Gri
+                
+                # İsim Temizliği (Graphviz hatasını önlemek için)
+                k1 = str(item.get('kimden', '?')).replace('"', '').strip()
+                k2 = str(item.get('kime', '?')).replace('"', '').strip()
+                yil = str(item.get('yil', '-'))
+                islem = str(item.get('islem', '-'))
+                
+                graph_code += f'\n  "{k1}" -> "{k2}" [label="{yil}\\n{islem}", fontsize=10];'
+                graph_code += f'\n  "{k2}" [fillcolor="{color}", label="{k2}"];'
+            
+            graph_code += "\n}"
+            st.graphviz_chart(graph_code)
+            
+            st.divider()
+            
+            # AI Analiz Butonu
+            if st.button("🕵️ Bu Zincirdeki Riskleri Analiz Et"):
+                with st.spinner("Dedektif inceliyor..."):
+                    model = genai.GenerativeModel('gemini-pro')
+                    chain_text = json.dumps(st.session_state.prop_history, ensure_ascii=False)
+                    res = model.generate_content(f"Bu tapu zincirindeki hukuki riskleri, kayıp mirasçıları ve eksik intikalleri analiz et:\n{chain_text}")
+                    st.info(res.text)
+        else:
+            st.info("👈 Sol taraftan belge yükleyerek zinciri oluşturun.")
+
 
 
 
