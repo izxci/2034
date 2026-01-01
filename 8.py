@@ -1766,131 +1766,89 @@ def render_forensic_map(api_key):
             st.caption("👈 Analiz butonuna bastığınızda bölgedeki risk yoğunluğu haritaya işlenecektir.")
 
 
-import datetime
 
 def render_temporal_law_machine(api_key):
-    st.info("🕰️ **Mevzuat Zaman Makinesi:** Olayın yaşandığı tarihe geri döner. O gün yürürlükte olan (şu an mülga) kanunları, tüzükleri ve Yargıtay içtihatlarını bugünkülerle kıyaslar.")
+    import datetime as dt # Çakışmayı önlemek için güvenli import
+    
+    st.header("🕰️ Mevzuat Makinesi (Zaman Yolculuğu)")
+    st.info("Seçilen tarihte yürürlükte olan kanunları ve o dönemin hukuki şartlarını analiz eder.")
 
-    # --- 0. MODEL SEÇİCİ ---
-    def get_best_model():
-        try:
-            available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-            for m in available_models:
-                if 'flash' in m: return m
-            return available_models[0] if available_models else "models/gemini-pro"
-        except:
-            return "models/gemini-pro"
-
-    col_settings, col_result = st.columns([1, 2])
-
-    # --- 1. ZAMAN AYARLARI ---
-    with col_settings:
-        st.markdown("### ⚙️ Zaman Koordinatları")
-        
-        # Tarih Seçimi (Varsayılan: 1990'lar)
-        target_date = st.date_input("Olay Tarihi", datetime.date(1995, 6, 15))
-        
-        topic = st.selectbox("Hukuki Konu", [
-            "Gayrimenkul Devri (Tapu İptal)", 
-            "Miras Paylaşımı (Tereke)", 
-            "Boşanma ve Mal Rejimi", 
-            "İş Kazası Tazminatı",
-            "Ticari Sözleşme İhlali"
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # HATA VEREN SATIR DÜZELTİLDİ: dt.date kullanıldı
+        target_date = st.date_input("Olay Tarihi", dt.date(1995, 6, 15))
+    
+    with col2:
+        konu = st.selectbox("İlgili Kanun/Konu", [
+            "Medeni Kanun (Boşanma/Miras)",
+            "Ceza Kanunu (Suç/Ceza)",
+            "Borçlar Kanunu (Sözleşme)",
+            "İş Kanunu (Kıdem/İhbar)"
         ])
-        
-        specific_query = st.text_input("Özel Detay (Opsiyonel)", "Muris muvazaası ve saklı pay")
-        
-        st.divider()
-        st.markdown("#### 🔄 Dönüşüm Modu")
-        comparison_mode = st.radio("Analiz Türü", ["Sadece O Günün Kanunu", "Eski vs Yeni Kanun Kıyaslaması"])
-        
-        start_travel = st.button("🚀 Geçmişe Git ve Mevzuatı Getir", type="primary")
 
-    # --- 2. SONUÇ EKRANI ---
-    with col_result:
-        st.markdown(f"### 📜 {target_date.year} Yılı Mevzuat Panoramas")
+    if st.button("⏳ O Tarihe Git ve Analiz Et"):
+        st.divider()
         
-        if start_travel:
-            if not api_key:
-                st.error("Zaman yolculuğu için API Key gerekli.")
+        # --- TARİHSEL KONTROL NOKTALARI ---
+        yil = target_date.year
+        donem_bilgisi = ""
+        uyari = ""
+        
+        # Medeni Kanun Kontrolü
+        if "Medeni" in konu:
+            if target_date < dt.date(2002, 1, 1):
+                donem_bilgisi = "📜 **743 Sayılı Eski Medeni Kanun** yürürlüktedir."
+                uyari = "⚠️ DİKKAT: Bu tarihte 'Edinilmiş Mallara Katılma Rejimi' YOKTUR. Mal ayrılığı rejimi esastır. Kadının soyadı ve temsil yetkisi konusunda eski hükümler geçerlidir."
             else:
-                # Görsel Efekt
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-                
-                status_text.text(f"⏳ {target_date.year} yılına gidiliyor...")
-                time.sleep(0.5)
-                progress_bar.progress(30)
-                
-                status_text.text("📚 Resmi Gazete arşivleri taranıyor...")
-                time.sleep(0.5)
-                progress_bar.progress(60)
-                
-                status_text.text("⚖️ Mülga kanun maddeleri getiriliyor...")
-                progress_bar.progress(90)
-                
-                try:
-                    genai.configure(api_key=api_key)
-                    active_model = get_best_model()
-                    model = genai.GenerativeModel(active_model)
-                    
-                    # Kritik Tarih Kontrolleri (Prompt'a ipucu vermek için)
-                    era_context = ""
-                    if target_date.year < 2002:
-                        era_context += "UYARI: Bu tarihte 4721 sayılı Türk Medeni Kanunu YOKTU. 743 sayılı Türk Kanunu Medenisi yürürlükteydi. "
-                    if target_date.year < 2012:
-                        era_context += "UYARI: 6098 sayılı Borçlar Kanunu YOKTU. 818 sayılı Borçlar Kanunu yürürlükteydi. "
-                    
-                    prompt = f"""
-                    GÖREV: Sen bir Hukuk Tarihçisi ve Mevzuat Uzmanısın.
-                    
-                    HEDEF TARİH: {target_date.strftime('%d.%m.%Y')}
-                    KONU: {topic}
-                    DETAY: {specific_query}
-                    BAĞLAM: {era_context}
-                    
-                    İSTENEN ÇIKTI (Rapor Formatı):
-                    
-                    1. 🏛️ YÜRÜRLÜKTEKİ TEMEL KANUN
-                    - O tarihte geçerli olan Kanun Numarası ve Adı (Örn: 743 s. TKM).
-                    - İlgili Madde Numarası ve (mümkünse) o günkü metni.
-                    
-                    2. 📜 KRİTİK FARKLILIKLAR (BUGÜNE GÖRE)
-                    - Bugün uygulanan kanunla (Örn: 4721 s. TMK) o günkü kanun arasındaki hayati fark nedir?
-                    - Örnek: "O tarihte 'Edinilmiş Mallara Katılma Rejimi' yoktu, 'Mal Ayrılığı' esastı."
-                    
-                    3. ⚖️ DÖNEMİN İÇTİHADI
-                    - O yıllarda Yargıtay'ın bu konuya bakışı nasıldı? (Örn: 1990'larda inançlı işlem içtihadı).
-                    
-                    4. 💎 AVUKAT İÇİN STRATEJİ
-                    - Davayı kazanmak için mahkemeye "Olay tarihindeki mevzuat uygulanmalıdır" itirazını nasıl sunmalıyım?
-                    """
-                    
-                    response = model.generate_content(prompt, stream=True)
-                    
-                    full_text = ""
-                    status_text.empty() # Yazıyı temizle
-                    output_placeholder = st.empty()
-                    
-                    for chunk in response:
-                        full_text += chunk.text
-                        output_placeholder.markdown(full_text + "▌")
-                    
-                    output_placeholder.markdown(full_text)
-                    progress_bar.progress(100)
-                    
-                except Exception as e:
-                    st.error(f"Hata: {e}")
-        else:
-            st.info("👈 Sol taraftan tarihi seçin ve yolculuğu başlatın.")
+                donem_bilgisi = "📜 **4721 Sayılı Yeni Türk Medeni Kanunu** yürürlüktedir."
+                uyari = "✅ Edinilmiş mallara katılma rejimi geçerlidir."
+
+        # TCK Kontrolü
+        elif "Ceza" in konu:
+            if target_date < dt.date(2005, 6, 1):
+                donem_bilgisi = "📜 **765 Sayılı Eski Türk Ceza Kanunu** yürürlüktedir."
+                uyari = "⚠️ DİKKAT: Lehe kanun uygulaması (TCK m.7) açısından 5237 sayılı yeni kanunla kıyaslama yapılmalıdır. Para cezalarında o dönemin bol sıfırlı rakamları dikkate alınmalıdır."
+            else:
+                donem_bilgisi = "📜 **5237 Sayılı Yeni Türk Ceza Kanunu** yürürlüktedir."
+
+        # Borçlar Kanunu
+        elif "Borçlar" in konu:
+            if target_date < dt.date(2012, 7, 1):
+                donem_bilgisi = "📜 **818 Sayılı Eski Borçlar Kanunu** yürürlüktedir."
+            else:
+                donem_bilgisi = "📜 **6098 Sayılı Türk Borçlar Kanunu** yürürlüktedir."
+        
+        # İş Kanunu
+        elif "İş" in konu:
+            if target_date < dt.date(2003, 6, 10):
+                donem_bilgisi = "📜 **1475 Sayılı Eski İş Kanunu** yürürlüktedir."
+                uyari = "⚠️ Kıdem tazminatı tavanı o yılın katsayılarına göre hesaplanmalıdır."
+            else:
+                donem_bilgisi = "📜 **4857 Sayılı İş Kanunu** yürürlüktedir."
+
+        # --- SONUÇ EKRANI ---
+        st.subheader(f"📅 Tarih: {target_date.strftime('%d.%m.%Y')}")
+        st.success(donem_bilgisi)
+        if uyari:
+            st.warning(uyari)
             
-            # Örnek Gösterim (Placeholder)
-            st.markdown("""
-            **Örnek Senaryo:**
-            * **Tarih:** 1995
-            * **Konu:** Boşanma Mal Paylaşımı
-            * **Sonuç:** 2002 öncesi evliliklerde "Mal Ayrılığı" rejimi geçerli olduğundan, kadın eşin ev hanımı olması durumunda tapuda adı yoksa hak talep etmesi çok zordu. Sistem bunu tespit edip "Katkı Payı Alacağı" davası açmanızı önerir.
-            """)
+        # AI Analizi
+        if api_key:
+            with st.spinner("O dönemin içtihatları taranıyor..."):
+                prompt = f"""
+                GÖREV: Hukuk tarihçisi gibi davran.
+                TARİH: {target_date.strftime('%d.%m.%Y')}
+                KONU: {konu}
+                
+                SORU: Bu tarihte bu konuda açılacak bir davada nelere dikkat edilmeli? 
+                O dönemin Yargıtay yaklaşımı nasıldı? 
+                Bugünkü hukuktan en büyük farkı nedir?
+                Kısa ve maddeler halinde özetle.
+                """
+                analiz = get_ai_response(prompt, api_key)
+                st.markdown(f"<div class='buyur-abi-kutusu'>{analiz}</div>", unsafe_allow_html=True)
+
 
 
 def render_expert_report_auditor(api_key):
