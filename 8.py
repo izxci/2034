@@ -1993,8 +1993,9 @@ def render_expert_report_auditor(api_key):
                     output_box.error(f"Analiz Hatası: {e}")
 
 
+
 def render_corporate_memory(api_key):
-    st.info("🏛️ **Kurumsal Hafıza V2 (Oto-Model Seçicili):** Belgeleri tarar, verileri ayıklar ve Excel'e işler. Model isimlendirme hatalarına karşı dirençlidir.")
+    st.info("🏛️ **Kurumsal Hafıza V3 (Oto-Pilot):** Mevcut en güncel AI modelini otomatik bulur ve 'Model Bulunamadı' hatalarını engeller.")
 
     # --- KÜTÜPHANE KONTROLLERİ ---
     try:
@@ -2011,178 +2012,159 @@ def render_corporate_memory(api_key):
     if "archive_df" not in st.session_state:
         st.session_state.archive_df = pd.DataFrame(columns=["Tarih", "Konu", "Özet", "Detay", "İlgili Kişi/Kurum", "Dosya Adı"])
 
-    # --- YARDIMCI FONKSİYON: OTOMATİK MODEL SEÇİCİ ---
-    def get_optimal_model(api_key_val):
+    # --- KRİTİK FONKSİYON: SAĞLAM MODEL BULUCU ---
+    def get_working_model(api_key_val):
         """
-        API'deki mevcut modelleri tarar ve hem metin hem resim (multimodal) 
-        işleyebilen en iyi modeli seçer.
-        Sıralama: 1.5 Flash -> 1.5 Pro -> Pro Vision -> Pro
+        API'den güncel listeyi çeker. Hata verirse manuel listeyi dener.
+        En garantili çalışan modeli döndürür.
         """
         genai.configure(api_key=api_key_val)
+        
+        # 1. YÖNTEM: API'den Canlı Liste İste
         try:
-            # Tüm modelleri çek
-            all_models = list(genai.list_models())
-            model_names = [m.name for m in all_models if 'generateContent' in m.supported_generation_methods]
+            available_models = []
+            for m in genai.list_models():
+                if 'generateContent' in m.supported_generation_methods:
+                    available_models.append(m.name)
             
-            # 1. TERCİH: Gemini 1.5 Flash (Hızlı, Ucuz, Multimodal)
-            for m in model_names:
-                if 'flash' in m and '1.5' in m: return m
+            # Öncelik Sıralaması (En iyiden en eskiye)
+            priorities = [
+                'models/gemini-1.5-flash',
+                'models/gemini-1.5-pro',
+                'models/gemini-1.5-flash-latest',
+                'models/gemini-1.0-pro',
+                'models/gemini-pro'
+            ]
             
-            # 2. TERCİH: Gemini 1.5 Pro (Güçlü, Multimodal)
-            for m in model_names:
-                if 'pro' in m and '1.5' in m: return m
+            # Listede eşleşen en iyi modeli bul
+            for p in priorities:
+                if p in available_models:
+                    return p
+            
+            # Tam eşleşme yoksa, içinde 'flash' geçeni al
+            for m in available_models:
+                if 'flash' in m: return m
                 
-            # 3. TERCİH: Gemini Pro Vision (Eski sürüm resim okuyucu)
-            for m in model_names:
-                if 'vision' in m: return m
+            # O da yoksa ilk bulduğunu al
+            if available_models:
+                return available_models[0]
                 
-            # 4. ÇARESİZLİK: Standart Gemini Pro (Sadece metin çalışır, resimde hata verir ama kod çökmez)
-            return "models/gemini-pro"
-            
         except Exception as e:
-            # Listeleme hatası olursa varsayılanı döndür
-            return "models/gemini-pro"
+            pass # Liste alınamazsa manuel listeye geç
+
+        # 2. YÖNTEM: Manuel Güvenli Liste (Fallback)
+        # API listeleme başarısız olsa bile bu isimler genellikle çalışır
+        return "models/gemini-1.5-flash"
 
     # --- SEKME YAPISI ---
     tab_upload, tab_query = st.tabs(["📂 Belge İşle & Arşivle", "🔍 Arşivde Sorgu Yap"])
 
     # ==========================================
-    # 1. SEKME: BELGE İŞLEME VE EXCEL YÖNETİMİ
+    # 1. SEKME: BELGE İŞLEME
     # ==========================================
     with tab_upload:
         col_db, col_process = st.columns([1, 1])
 
         # A. MEVCUT VERİTABANINI YÜKLE
         with col_db:
-            st.markdown("### 1. Mevcut Arşivi Yükle (Excel)")
-            uploaded_excel = st.file_uploader("Önceki 'Kurumsal_Hafiza.xlsx' dosyanızı yükleyin", type=["xlsx"])
+            st.markdown("### 1. Mevcut Arşivi Yükle")
+            uploaded_excel = st.file_uploader("Önceki Excel Dosyanız", type=["xlsx"])
             
             if uploaded_excel:
                 try:
                     loaded_df = pd.read_excel(uploaded_excel)
-                    required_cols = ["Tarih", "Konu", "Özet", "Detay", "İlgili Kişi/Kurum", "Dosya Adı"]
-                    # Basit sütun kontrolü
-                    if any(col in loaded_df.columns for col in required_cols):
-                        st.session_state.archive_df = loaded_df
-                        st.success(f"✅ Veritabanı Yüklendi! Toplam Kayıt: {len(loaded_df)}")
-                    else:
-                        st.warning("Excel formatı tam uymuyor ama yine de yüklendi. Sütun isimlerini kontrol edin.")
-                        st.session_state.archive_df = loaded_df
+                    st.session_state.archive_df = loaded_df
+                    st.success(f"✅ Veritabanı Yüklendi! ({len(loaded_df)} kayıt)")
                 except Exception as e:
-                    st.error(f"Excel okuma hatası: {e}")
+                    st.error(f"Excel Hatası: {e}")
             
             # Tablo Önizleme
-            st.markdown("#### 📊 Mevcut Veritabanı")
             st.dataframe(st.session_state.archive_df, height=200, use_container_width=True)
             
-            # İndirme Butonu
+            # İndir
             if not st.session_state.archive_df.empty:
                 excel_data = io.BytesIO()
                 st.session_state.archive_df.to_excel(excel_data, index=False)
-                st.download_button(
-                    label="💾 Güncel Arşivi İndir (Excel)",
-                    data=excel_data.getvalue(),
-                    file_name="Kurumsal_Hafiza.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
+                st.download_button("💾 Arşivi İndir", excel_data.getvalue(), "Kurumsal_Hafiza.xlsx")
 
-        # B. YENİ BELGE İŞLEME
+        # B. YENİ BELGE EKLE
         with col_process:
-            st.markdown("### 2. Yeni Belge Ekle (OCR & AI)")
-            files = st.file_uploader("Belgeleri Seçin (PDF, DOCX, JPG, PNG)", 
-                                   type=["pdf", "docx", "png", "jpg", "jpeg", "tiff"], 
-                                   accept_multiple_files=True)
+            st.markdown("### 2. Yeni Belge Ekle")
+            files = st.file_uploader("Belgeler", type=["pdf", "docx", "png", "jpg", "jpeg"], accept_multiple_files=True)
             
-            process_btn = st.button("⚙️ Belgeleri Analiz Et ve Tabloya Ekle", type="primary")
-
-            if process_btn and files:
+            if st.button("⚙️ Analiz Et ve Ekle", type="primary") and files:
                 if not api_key:
-                    st.error("Analiz için API Key gerekli.")
+                    st.error("API Key gerekli.")
                 else:
-                    # --- OTOMATİK MODEL SEÇİMİ ---
-                    active_model_name = get_optimal_model(api_key)
-                    # st.caption(f"ℹ️ Kullanılan AI Modeli: {active_model_name}") # Debug için açılabilir
+                    # --- MODELİ BELİRLE ---
+                    active_model_name = get_working_model(api_key)
+                    st.toast(f"🤖 Aktif Model: {active_model_name}", icon="✅")
                     
                     model = genai.GenerativeModel(active_model_name)
-                    
                     progress_bar = st.progress(0)
-                    status_text = st.empty()
-                    
                     new_records = []
                     
                     for idx, file in enumerate(files):
-                        status_text.text(f"İşleniyor: {file.name}...")
-                        content_to_analyze = ""
-                        is_image = False
-                        image_data = None
-
-                        # 1. Dosya İçeriğini Oku
                         try:
+                            content = ""
+                            image_data = None
+                            is_image = False
+                            
+                            # Dosya Okuma
                             if file.type == "application/pdf":
                                 reader = PdfReader(file)
-                                for page in reader.pages:
-                                    text = page.extract_text()
-                                    if text: content_to_analyze += text + "\n"
-                            
-                            elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+                                for page in reader.pages: content += page.extract_text() + "\n"
+                            elif "word" in file.type:
                                 doc = Document(file)
-                                for para in doc.paragraphs:
-                                    content_to_analyze += para.text + "\n"
-                            
-                            elif file.type in ["image/png", "image/jpeg", "image/tiff", "image/jpg"]:
+                                for p in doc.paragraphs: content += p.text + "\n"
+                            elif "image" in file.type:
                                 is_image = True
                                 image_data = Image.open(file)
-                            
-                        except Exception as e:
-                            st.warning(f"{file.name} okunamadı: {e}")
-                            continue
 
-                        # 2. AI ile Veri Çıkarma
-                        try:
+                            # Prompt Hazırla
                             prompt = """
-                            Bu belgeden aşağıdaki bilgileri saf JSON formatında çıkar.
-                            Markdown (```json) kullanma, sadece ham JSON ver.
-                            
-                            Alanlar:
-                            - Tarih (Format: GG.AA.YYYY, yoksa belirsiz)
-                            - Konu (Kısa başlık)
-                            - Ozet (1-2 cümle)
-                            - Detay (Önemli maddeler)
-                            - Ilgili_Kisi (Kurum veya şahıs adı)
+                            Bu belgeden şu bilgileri JSON formatında çıkar:
+                            {"Tarih": "GG.AA.YYYY", "Konu": "...", "Ozet": "...", "Detay": "...", "Ilgili_Kisi": "..."}
+                            Sadece JSON ver.
                             """
                             
+                            # API Çağrısı (Retry Mekanizması ile)
                             response = None
-                            
-                            # Modele göre içerik gönderme şekli
-                            if is_image:
-                                # Eğer model vision desteklemiyorsa (eski gemini-pro ise) hata verebilir
-                                if "vision" not in active_model_name and "1.5" not in active_model_name:
-                                    st.warning(f"⚠️ Seçilen model ({active_model_name}) resim okuyamıyor. {file.name} atlandı.")
-                                    continue
-                                response = model.generate_content([prompt, image_data])
-                            else:
-                                if len(content_to_analyze) > 5:
-                                    response = model.generate_content(prompt + f"\n\nMETİN:\n{content_to_analyze[:25000]}")
-                            
+                            try:
+                                if is_image:
+                                    # Eğer model vision desteklemiyorsa flash'a zorla
+                                    if "flash" not in active_model_name and "1.5" not in active_model_name:
+                                        model_vision = genai.GenerativeModel("models/gemini-1.5-flash")
+                                        response = model_vision.generate_content([prompt, image_data])
+                                    else:
+                                        response = model.generate_content([prompt, image_data])
+                                else:
+                                    if len(content) > 5:
+                                        response = model.generate_content(prompt + f"\n\nMETİN:\n{content[:20000]}")
+                            except Exception as api_err:
+                                st.warning(f"Model hatası ({active_model_name}), yedek model deneniyor...")
+                                # Hata verirse kesin çalışan Flash modelini dene
+                                backup_model = genai.GenerativeModel("models/gemini-1.5-flash")
+                                if is_image:
+                                    response = backup_model.generate_content([prompt, image_data])
+                                else:
+                                    response = backup_model.generate_content(prompt + f"\n\nMETİN:\n{content[:20000]}")
+
+                            # Sonucu İşle
                             if response and response.text:
-                                # JSON Temizleme
                                 clean_json = response.text.replace("```json", "").replace("```", "").strip()
                                 data = json.loads(clean_json)
                                 
                                 # Mükerrer Kontrolü
-                                is_duplicate = False
+                                is_dup = False
                                 if not st.session_state.archive_df.empty:
-                                    # Konu ve Tarih aynıysa mükerrer say
                                     check = st.session_state.archive_df[
                                         (st.session_state.archive_df['Konu'] == data.get('Konu')) & 
                                         (st.session_state.archive_df['Tarih'] == data.get('Tarih'))
                                     ]
-                                    if not check.empty:
-                                        is_duplicate = True
+                                    if not check.empty: is_dup = True
                                 
-                                if is_duplicate:
-                                    st.warning(f"⚠️ Mükerrer: {file.name} zaten var.")
-                                else:
+                                if not is_dup:
                                     new_records.append({
                                         "Tarih": data.get("Tarih", "-"),
                                         "Konu": data.get("Konu", "-"),
@@ -2193,15 +2175,14 @@ def render_corporate_memory(api_key):
                                     })
                                     
                         except Exception as e:
-                            st.error(f"AI Analiz Hatası ({file.name}): {e}")
-
+                            st.error(f"Hata ({file.name}): {e}")
+                        
                         progress_bar.progress((idx + 1) / len(files))
 
-                    # 3. Tabloyu Güncelle
+                    # Kaydet
                     if new_records:
-                        new_df = pd.DataFrame(new_records)
-                        st.session_state.archive_df = pd.concat([st.session_state.archive_df, new_df], ignore_index=True)
-                        st.success(f"✅ {len(new_records)} yeni belge işlendi!")
+                        st.session_state.archive_df = pd.concat([st.session_state.archive_df, pd.DataFrame(new_records)], ignore_index=True)
+                        st.success("İşlem Tamamlandı!")
                         st.rerun()
 
     # ==========================================
@@ -2209,40 +2190,21 @@ def render_corporate_memory(api_key):
     # ==========================================
     with tab_query:
         st.markdown("### 🧠 Arşivde Semantik Arama")
-        
         if st.session_state.archive_df.empty:
-            st.info("Veritabanı boş. Lütfen önce belge yükleyin.")
+            st.info("Veri yok.")
         else:
-            query = st.text_input("Soru / Arama", placeholder="Örn: Geçen yılki tadilat sözleşmesinde ceza maddesi neydi?")
-            
-            if st.button("🔍 Ara", type="primary"):
-                if not api_key:
-                    st.error("API Key gerekli.")
-                else:
-                    with st.spinner("Arşiv taranıyor..."):
-                        try:
-                            active_model_name = get_optimal_model(api_key)
-                            model = genai.GenerativeModel(active_model_name)
-                            
-                            # Veriyi JSON string'e çevir
-                            context = st.session_state.archive_df.to_json(orient="records", force_ascii=False)
-                            
-                            prompt = f"""
-                            GÖREV: Aşağıdaki VERİTABANI'nı kullanarak kullanıcının sorusunu yanıtla.
-                            
-                            VERİTABANI:
-                            {context}
-                            
-                            SORU: "{query}"
-                            
-                            Lütfen cevabında hangi tarihli ve hangi konulu belgeye atıf yaptığını belirt.
-                            """
-                            
-                            response = model.generate_content(prompt)
-                            st.markdown(response.text)
-                            
-                        except Exception as e:
-                            st.error(f"Sorgu Hatası: {e}")
+            query = st.text_input("Soru:", placeholder="Örn: X firması ile ilgili sözleşme detayı?")
+            if st.button("🔍 Ara"):
+                with st.spinner("Aranıyor..."):
+                    try:
+                        active_model = get_working_model(api_key)
+                        model = genai.GenerativeModel(active_model)
+                        context = st.session_state.archive_df.to_json(orient="records", force_ascii=False)
+                        prompt = f"VERİTABANI:\n{context}\n\nSORU: {query}\n\nBu veritabanına göre cevapla:"
+                        st.markdown(model.generate_content(prompt).text)
+                    except Exception as e:
+                        st.error(f"Hata: {e}")
+
 
 
 
