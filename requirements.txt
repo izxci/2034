@@ -16,4 +16,5 @@ SpeechRecognition
 pandas 
 openpyxl
 graphviz
+networkx
 google-generativeai>=0.7.0
