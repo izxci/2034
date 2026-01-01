@@ -2269,7 +2269,7 @@ def main():
         secilen_modul = ""
         if secilen_kategori == "🛠️ Temel Araçlar":
             secilen_modul = st.selectbox("Araç Seç:", [
-                "📋 Analiz", "💬 Sohbet", "📕 Mevzuat", "⚖️ İçtihat", 
+                "💬 Sohbet", "📕 Mevzuat", "⚖️ İçtihat", 
                 "✍️ Dilekçe Yaz", "❓ Bana Sor", "🎙️ Ses", "👁️ OCR",
                 "🌍 Çeviri", "🛡️ Çürüt", "🕵️‍♂️ Sorgu", "😈 Şeytanın Avukatı", 
                 "🤿 Dalgıç", "🧠 Semantik", "🎙️ Canlı Duruşma", "🦋 Kelebek"
