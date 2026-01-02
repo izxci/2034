@@ -8,6 +8,7 @@ PyPDF2
 fpdf
 gTTS 
 Pillow
+lxml
 plotly
 pytesseract
 matplotlib
