@@ -2765,6 +2765,257 @@ def render_special_legislation_module(api_key):
             st.markdown(f"<div style='background-color:#f0f2f6; padding:15px; border-radius:10px; border-left:5px solid #2e7d32;'>{cevap}</div>", unsafe_allow_html=True)
 
 
+def render_circular_cross_check_module(api_key):
+    import difflib
+    from pypdf import PdfReader
+    from docx import Document
+    from PIL import Image
+    import io
+
+    # --- YARDIMCI FONKSİYONLAR ---
+    def extract_text_from_file(uploaded_file):
+        """Farklı dosya türlerinden metin okur."""
+        text = ""
+        file_type = uploaded_file.name.split('.')[-1].lower()
+        
+        try:
+            if file_type == 'pdf':
+                reader = PdfReader(uploaded_file)
+                for page in reader.pages:
+                    text += page.extract_text() + "\n"
+            elif file_type == 'docx':
+                doc = Document(uploaded_file)
+                for para in doc.paragraphs:
+                    text += para.text + "\n"
+            elif file_type in ['txt', 'md']:
+                text = uploaded_file.read().decode("utf-8")
+            elif file_type in ['jpg', 'jpeg', 'png', 'tiff', 'img']:
+                text = "GÖRSEL_İÇERİK" # Görsel işleme AI modeline bırakılacak
+        except Exception as e:
+            return f"Hata: Dosya okunamadı. ({str(e)})"
+        
+        return text
+
+    st.header("📜 Mevzuat & Genelge Entegre Analiz Sistemi")
+    st.info("Tarım ve Orman Bakanlığı mevzuat hiyerarşisine göre belge denetimi, dosya analizi ve web taraması yapar.")
+
+    # --- SEKME YAPISI ---
+    tabs = st.tabs([
+        "👮 Belge/Dosya Denetimi", 
+        "💬 Mevzuat Soru-Cevap", 
+        "🌐 Bakanlık Site Tarama", 
+        "🔄 Eski vs Yeni (Diff)"
+    ])
+
+    # ==========================================
+    # 1. SEKME: DOSYA YÜKLEME VE DENETİM
+    # ==========================================
+    with tabs[0]:
+        st.subheader("📂 Belge Yükle ve Denetle")
+        
+        col1, col2 = st.columns([1, 2])
+        
+        with col1:
+            kanun_kapsami = st.selectbox("İlgili Kanun/Alan", [
+                "5996 s.K. - Gıda/Yem/Veteriner",
+                "5403 s.K. - Toprak Koruma",
+                "4342 s.K. - Mera",
+                "3083 s.K. - Arazi Düzenleme",
+                "1163 s.K. - Kooperatifler",
+                "5488 s.K. - Tarım Destekleri"
+            ])
+            
+            uploaded_file = st.file_uploader("Dosya Yükle", type=['pdf', 'docx', 'txt', 'jpg', 'png', 'tiff'])
+            
+        with col2:
+            user_text = ""
+            image_data = None
+            
+            if uploaded_file:
+                st.success(f"Dosya yüklendi: {uploaded_file.name}")
+                extracted = extract_text_from_file(uploaded_file)
+                
+                if extracted == "GÖRSEL_İÇERİK":
+                    st.image(uploaded_file, caption="Yüklenen Belge", width=300)
+                    image_data = Image.open(uploaded_file)
+                    st.info("🖼️ Görsel içerik algılandı. AI, metni görselden okuyarak analiz edecek.")
+                else:
+                    user_text = st.text_area("Belge İçeriği (Düzenlenebilir)", value=extracted, height=200)
+            else:
+                user_text = st.text_area("Veya Metni Buraya Yapıştırın", height=200, placeholder="Savunma metni veya genelge maddesini buraya girin...")
+
+        if st.button("🛡️ Hiyerarşik Denetimi Başlat") and api_key:
+            if not user_text and not image_data:
+                st.warning("Lütfen bir dosya yükleyin veya metin girin.")
+            else:
+                with st.spinner("Bakanlık talimatları ve güncel genelgeler taranıyor..."):
+                    
+                    # Prompt Hazırlığı
+                    base_prompt = f"""
+                    GÖREV: T.C. Tarım ve Orman Bakanlığı Başmüfettişi gibi davran.
+                    KAPSAM: {kanun_kapsami}
+                    
+                    ANALİZ İSTEĞİ:
+                    1. Bu metin/belge, ilgili kanuna ve Bakanlık teamüllerine uygun mu?
+                    2. Normlar Hiyerarşisi (Kanun > Yönetmelik > Genelge) açısından bir risk var mı?
+                    3. Varsa eksiklikleri veya riskleri "Resmi Dille" uyar.
+                    """
+                    
+                    if image_data:
+                        # Görsel Analiz (Multimodal)
+                        response = get_ai_response([base_prompt + "\nEkli görseldeki metni analiz et.", image_data], api_key)
+                    else:
+                        # Metin Analiz
+                        response = get_ai_response(base_prompt + f"\nMETİN: {user_text}", api_key)
+                    
+                    st.markdown("### 📋 Denetim Raporu")
+                    st.markdown(f"<div style='background-color:#f8f9fa; padding:15px; border-left:5px solid #d32f2f; border-radius:5px;'>{response}</div>", unsafe_allow_html=True)
+
+    # ==========================================
+    # 2. SEKME: SORU - CEVAP (Q&A)
+    # ==========================================
+    with tabs[1]:
+        st.subheader("💬 Mevzuat Danışmanı")
+        st.caption("Yüklediğiniz dosya veya genel mevzuat hakkında soru sorun.")
+        
+        soru = st.text_input("Sorunuzu yazın:", placeholder="Örn: Bu genelgeye göre 2024 yılı destekleme başvurusu ne zaman biter?")
+        
+        if st.button("Soru Sor") and api_key:
+            context = ""
+            if uploaded_file and user_text:
+                context = f"BAĞLAM (YÜKLENEN DOSYA): {user_text[:2000]}..." # İlk 2000 karakteri bağlam olarak al
+            
+            prompt_qa = f"""
+            Sen uzman bir hukuk asistanısın.
+            {context}
+            
+            SORU: {soru}
+            
+            CEVAP (Kısa, net ve mevzuat referanslı olsun):
+            """
+            with st.spinner("Cevap hazırlanıyor..."):
+                cevap = get_ai_response(prompt_qa, api_key)
+                st.write(cevap)
+
+    # ==========================================
+    # 3. SEKME: GELİŞMİŞ RESMİ TARAMA (KAYSİS EKLENDİ)
+    # ==========================================
+    with tabs[2]:
+        st.subheader("🌐 Gelişmiş Resmi Veri Tarama")
+        st.caption("Bakanlık sitesi, KAYSİS, Mevzuat.gov.tr ve Resmi Gazete içinde çapraz arama yapar.")
+        
+        # Arama Terimi
+        search_query = st.text_input("Aranacak Konu/Kelime", placeholder="Örn: Çiğ Süt Desteklemesi Uygulama Tebliği")
+        
+        # Kaynak Seçimi
+        st.write("🔎 **Hangi Kaynaklarda Aransın?**")
+        c1, c2 = st.columns(2)
+        
+        with c1:
+            source_ministry = st.checkbox("Tarimorman.gov.tr", value=True)
+            source_mevzuat = st.checkbox("Mevzuat.gov.tr (Genel)", value=True)
+            
+        with c2:
+            # BURASI EKLENDİ: KAYSİS
+            source_kaysis = st.checkbox("KAYSİS (Bakanlık İç Mevzuatı)", value=True, help="https://kms.kaysis.gov.tr/Home/Kurum/24308110 adresini tarar.")
+            source_resmi = st.checkbox("Resmi Gazete", value=False)
+            
+        # Ekstra Link Seçeneği
+        extra_site = st.text_input("🔗 Varsa Özel Link Ekle (Opsiyonel)", placeholder="Örn: tigem.gov.tr")
+        
+        # Filtreler
+        st.divider()
+        f1, f2 = st.columns(2)
+        with f1:
+            file_filter = st.checkbox("Sadece PDF Dosyaları", value=True)
+        with f2:
+            year_filter = st.checkbox("Sadece Güncel (2023-2026)", value=True)
+        
+        if st.button("🚀 Resmi Kaynaklarda Ara"):
+            if not search_query:
+                st.warning("Lütfen aranacak bir kelime girin.")
+            else:
+                # Site Listesi Oluşturma
+                sites = []
+                if source_ministry: sites.append("site:tarimorman.gov.tr")
+                if source_mevzuat: sites.append("site:mevzuat.gov.tr")
+                if source_resmi: sites.append("site:resmigazete.gov.tr")
+                
+                # KAYSİS İÇİN ÖZEL ARAMA MANTIĞI
+                if source_kaysis:
+                    # Google'da spesifik ID ile aramak bazen sonuç vermeyebilir, 
+                    # bu yüzden tüm KAYSİS içinde arayıp "Tarım ve Orman" filtresi eklemek daha garantidir.
+                    sites.append("site:kms.kaysis.gov.tr")
+                
+                if extra_site: 
+                    # Kullanıcı http/https girdiyse temizle
+                    clean_site = extra_site.replace('https://', '').replace('http://', '').strip('/')
+                    sites.append(f"site:{clean_site}")
+                
+                # Site sorgusunu birleştirme (OR mantığı)
+                if sites:
+                    site_query = "(" + " OR ".join(sites) + ")"
+                else:
+                    site_query = "" 
+                
+                # Ana Sorgu
+                final_query = f"{search_query} {site_query}"
+                
+                # KAYSİS seçiliyse, sonuçların karışmaması için bakanlık ismini de sorguya ekleyelim
+                if source_kaysis and "Tarım" not in search_query:
+                    final_query += " (Tarım ve Orman Bakanlığı)"
+
+                if file_filter:
+                    final_query += " filetype:pdf"
+                if year_filter:
+                    final_query += " after:2023-01-01"
+                
+                # URL Oluşturma
+                import urllib.parse
+                base_url = "https://www.google.com/search?q="
+                encoded_query = urllib.parse.quote(final_query)
+                full_url = f"{base_url}{encoded_query}"
+                
+                st.success("🔍 Özel arama motoru yapılandırıldı!")
+                st.markdown(f"""
+                <a href="{full_url}" target="_blank" style="text-decoration:none;">
+                    <button style="
+                        background-color:#2e7d32; 
+                        color:white; 
+                        padding:12px 24px; 
+                        border:none; 
+                        border-radius:8px; 
+                        font-size:16px; 
+                        font-weight:bold;
+                        cursor:pointer; 
+                        width:100%;
+                        box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                        👉 SONUÇLARI GÖRMEK İÇİN TIKLAYIN
+                    </button>
+                </a>
+                """, unsafe_allow_html=True)
+                
+                # Sorgu Önizleme
+                st.caption(f"Arka planda çalışan sorgu: `{final_query}`")
+
+    # ==========================================
+    # 4. SEKME: DIFF (DEĞİŞİKLİK ANALİZİ)
+    # ==========================================
+    with tabs[3]:
+        st.subheader("⚖️ Eski vs Yeni Karşılaştırma")
+        c1, c2 = st.columns(2)
+        with c1:
+            old_text = st.text_area("🔴 Eski Metin", height=150)
+        with c2:
+            new_text = st.text_area("🟢 Yeni Metin", height=150)
+            
+        if st.button("🔍 Farkları Göster"):
+            if old_text and new_text:
+                d = difflib.HtmlDiff()
+                html_diff = d.make_file(old_text.splitlines(), new_text.splitlines(), fromdesc="Eski", todesc="Yeni")
+                html_diff = html_diff.replace('table.diff {font-family:Courier; border:medium;}', 'table.diff {font-family:sans-serif; width:100%; border:1px solid #ddd;}')
+                st.components.v1.html(html_diff, height=400, scrolling=True)
+
 
 
 
@@ -2874,8 +3125,8 @@ def main():
 
     # 4. SATIR: oyun değiştirici hamle menüsü (15 Sekme)
     st.markdown("### 🛠️ Temel Araçlar & Strateji")
-    tabx1, tabx2, tabx3, tabx4, tabx5, tabx6, tabx7, tabx8 = st.tabs([
-        "🗺️ Adli Harita", "🕰️ Mevzuat Makinesi", "🧐 Rapor Denetçisi", "🏛️ Kurumsal Hafıza", "💰 Dava Maliyeti", "🗺️ Adli Olay Yeri", "🕵️ Visual Forensics", "🌲 Özel Mevzuat (Orman/Tarım)" 
+    tabx1, tabx2, tabx3, tabx4, tabx5, tabx6, tabx7, tabx8, tabx9 = st.tabs([
+        "🗺️ Adli Harita", "🕰️ Mevzuat Makinesi", "🧐 Rapor Denetçisi", "🏛️ Kurumsal Hafıza", "💰 Dava Maliyeti", "🗺️ Adli Olay Yeri", "🕵️ Visual Forensics", "🌲 Özel Mevzuat (Orman/Tarım)" ,"🌐 Bakanlık Veri Tabanı"
     ])
 
 
@@ -2915,6 +3166,7 @@ def main():
     with tabx6: render_forensic_map_module(api_key)
     with tabx7: render_visual_forensics_module(api_key)
     with tabx8: render_special_legislation_module(api_key)
+	with tabx9: render_circular_cross_check_module(api_key)
     # --- TAB İÇERİKLERİ ---
 
     with tab1:
