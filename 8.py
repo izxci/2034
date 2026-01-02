@@ -2670,6 +2670,101 @@ def render_visual_forensics_module(api_key):
                 st.markdown(f"**🤖 AI Uzman Görüşü:** {get_ai_response(prompt, api_key)}")
 
 
+def render_special_legislation_module(api_key):
+    st.header("🌲 Özel Mevzuat: Orman ve Tarım Analizörü")
+    st.info("6831 Sayılı Orman Kanunu ve 5403 Sayılı Toprak Koruma Kanunu kapsamında arazinizin hukuki durumunu analiz eder.")
+
+    col1, col2 = st.columns([1, 2])
+
+    with col1:
+        st.subheader("🚜 Arazi Bilgileri")
+        arazi_tipi = st.selectbox("Arazi Vasfı (Tapu/Kadastro)", [
+            "Tarım Arazisi (Mutlak/Marjinal)",
+            "Dikili Tarım Arazisi (Zeytinlik/Bağ)",
+            "Orman İçi / Orman Bitişiği",
+            "2B Arazisi (Orman Vasfını Yitirmiş)",
+            "Mera / Yaylak",
+            "Sit Alanı (Doğal/Arkeolojik)"
+        ])
+        
+        metrekare = st.number_input("Arazi Büyüklüğü (m²)", value=5000, step=500)
+        
+        niyet = st.selectbox("Yapılmak İstenen İşlem", [
+            "Bağ Evi / Konut Yapmak",
+            "Tiny House / Konteyner Koymak",
+            "Parselleyip Satmak (Hobi Bahçesi)",
+            "Miras Yoluyla Bölmek (İfraz)",
+            "Tel Çit Çekmek",
+            "Sondaj / Kuyu Açmak"
+        ])
+
+    with col2:
+        st.subheader("⚖️ Ön Mevzuat Kontrolü")
+        
+        # --- KURAL TABANLI KONTROLLER (Hard Rules) ---
+        risk_seviyesi = "Düşük"
+        mesajlar = []
+
+        # 1. Tarım Arazisine Ev/Tiny House
+        if "Tarım" in arazi_tipi and ("Konut" in niyet or "Tiny House" in niyet):
+            risk_seviyesi = "Yüksek"
+            mesajlar.append("🚨 **RİSK:** Tarım arazilerine konut yapmak için 'Tarım Dışı Amaçlı Kullanım İzni' gerekir. 5403 Sayılı Kanun'a göre izinsiz yapı (Tiny House dahil) yıkım ve idari para cezası sebebidir.")
+            if metrekare < 5000:
+                mesajlar.append("⚠️ **Kritik:** 5.000 m² altındaki tarım arazilerine bağ evi izni verilmesi neredeyse imkansızdır.")
+
+        # 2. Hobi Bahçesi
+        if "Parselleyip" in niyet:
+            risk_seviyesi = "Kritik"
+            mesajlar.append("🚫 **YASAK:** Tarım arazilerinin hisseli olarak satılıp fiilen bölünmesi (Hobi Bahçeleri) 2020 değişikliğiyle suç kapsamına alınmıştır. Valilikler yıkım kararı uygulamaktadır.")
+
+        # 3. Orman
+        if "Orman" in arazi_tipi:
+            risk_seviyesi = "Kritik"
+            if "Konut" in niyet or "Tel Çit" in niyet:
+                mesajlar.append("🌲 **ORMAN KANUNU:** Devlet ormanlarında mülkiyet kazanılamaz. İşgal (açma, yerleşme) 6831 s.K. m.91 gereği hapis cezası gerektiren suçtur.")
+
+        # 4. Zeytinlik
+        if "Zeytinlik" in arazi_tipi:
+            mesajlar.append("🫒 **Zeytincilik Kanunu:** Zeytinlik sahalara 3 km mesafede zeytinyağı tesisi hariç yapılaşma çok sıkı kısıtlamalara tabidir.")
+
+        # Durum Göstergesi
+        if risk_seviyesi == "Düşük":
+            st.success("✅ Temel kurallara aykırı bir durum görünmüyor (Yine de detaylı inceleme gerekir).")
+        elif risk_seviyesi == "Yüksek":
+            st.warning("⚠️ **DİKKAT:** Bu işlem ciddi izin süreçleri gerektirir.")
+        else:
+            st.error("🛑 **KRİTİK RİSK:** Bu işlem mevzuata açıkça aykırı olabilir!")
+
+        for m in mesajlar:
+            st.write(m)
+
+    st.divider()
+    
+    # --- AI ANALİZİ ---
+    st.subheader("🤖 Yapay Zeka Uzman Görüşü")
+    if st.button("🔍 Detaylı Mevzuat Analizi Yap") and api_key:
+        with st.spinner("Mevzuat taranıyor (6831, 5403, 3573 Sayılı Kanunlar)..."):
+            prompt = f"""
+            GÖREV: Türkiye mevzuatına hakim bir Toprak ve Orman Hukuku uzmanı gibi davran.
+            
+            DURUM:
+            - Arazi Tipi: {arazi_tipi}
+            - Büyüklük: {metrekare} m2
+            - İstenen İşlem: {niyet}
+            
+            ANALİZ İSTEĞİ:
+            1. Bu işlem yasal olarak mümkün mü? (İzin şartları neler?)
+            2. "Tarım Arazilerinin Bölünmez Büyüklüğü" kuralına takılır mı?
+            3. İzinsiz yapılırsa TCK veya İdari Para Cezası riski nedir?
+            4. Varsa emsal Yargıtay/Danıştay kararı mantığından bahset.
+            
+            Cevabı vatandaşın anlayacağı dilde, maddeler halinde ve uyarıcı tonla yaz.
+            """
+            
+            cevap = get_ai_response(prompt, api_key)
+            st.markdown(f"<div style='background-color:#f0f2f6; padding:15px; border-radius:10px; border-left:5px solid #2e7d32;'>{cevap}</div>", unsafe_allow_html=True)
+
+
 
 
 
@@ -2779,8 +2874,8 @@ def main():
 
     # 4. SATIR: oyun değiştirici hamle menüsü (15 Sekme)
     st.markdown("### 🛠️ Temel Araçlar & Strateji")
-    tabx1, tabx2, tabx3, tabx4, tabx5, tabx6, tabx7 = st.tabs([
-        "🗺️ Adli Harita", "🕰️ Mevzuat Makinesi", "🧐 Rapor Denetçisi", "🏛️ Kurumsal Hafıza", "💰 Dava Maliyeti", "🗺️ Adli Olay Yeri", "🕵️ Visual Forensics" 
+    tabx1, tabx2, tabx3, tabx4, tabx5, tabx6, tabx7, tabx8 = st.tabs([
+        "🗺️ Adli Harita", "🕰️ Mevzuat Makinesi", "🧐 Rapor Denetçisi", "🏛️ Kurumsal Hafıza", "💰 Dava Maliyeti", "🗺️ Adli Olay Yeri", "🕵️ Visual Forensics", "🌲 Özel Mevzuat (Orman/Tarım)" 
     ])
 
 
@@ -2819,6 +2914,7 @@ def main():
     with tabx5: render_cost_calculator_module(api_key)
     with tabx6: render_forensic_map_module(api_key)
     with tabx7: render_visual_forensics_module(api_key)
+	with tabx8: render_special_legislation_module(api_key)
     # --- TAB İÇERİKLERİ ---
 
     with tab1:
