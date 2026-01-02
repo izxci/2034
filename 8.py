@@ -2800,42 +2800,47 @@ def render_circular_cross_check_module(api_key):
         return text
 
 def fetch_kaysis_turbo(url, search_term):
-    # ScraperAPI kullanarak isteği yönlendirme (Cloud'da çalışması için)
-    # scraperapi.com adresinden alacağınız API KEY buraya:
+    import requests
+    import pandas as pd
+
+    # ScraperAPI Ayarları
     API_KEY = "afe6d60b061ef600cbe8477886476f1a" 
     
     payload = {
         'api_key': API_KEY, 
         'url': url, 
-        'country_code': 'tr' # Türk IP'si isteği
+        'country_code': 'tr', # Türk IP'si isteği
+        'render': 'true'      # Tabloların tam yüklenmesi için render açıldı
     }
     
     try:
-        response = requests.get('http://api.scraperapi.com', params=payload, timeout=20)
+        # 1. İSTEK ATMA (ScraperAPI Üzerinden)
+        # Timeout süresini 60 saniye yaptık çünkü proxy bazen yavaş olabilir.
+        response = requests.get('http://api.scraperapi.com', params=payload, timeout=60)
         
-        if response.status_code != 200: return None, "Proxy Hatası"
+        if response.status_code != 200: 
+            return None, f"Proxy Hatası: {response.status_code} - {response.text}"
         
-        # ... (Geri kalan pandas işlemleri aynı) ...
+        # 2. VERİ İŞLEME (Pandas)
+        # response.content kullanmak karakter kodlaması (encoding) hatalarını azaltır.
+        dfs = pd.read_html(response.content)
+        
+        if not dfs: 
+            return None, "Sayfada tablo bulunamadı."
+        
+        df = dfs[0]
+        
+        # 3. FİLTRELEME
+        # Türkçe karakter duyarlılığı için basit normalizasyon
+        # (Kullanıcı girdisi ve tablo içeriği string'e çevrilip aranır)
+        mask = df.apply(lambda x: x.astype(str).str.contains(search_term, case=False, na=False)).any(axis=1)
+        filtered_df = df[mask]
+        
+        return filtered_df, "Başarılı"
 
-        
-        try:
-            # Tabloları Oku
-            dfs = pd.read_html(response.text)
-            if not dfs: return None, "Tablo bulunamadı."
-            
-            df = dfs[0]
-            
-            # Türkçe karakter sorununu çözmek için
-            search_term = search_term.replace('i', 'İ').upper() # Basit bir normalizasyon
-            
-            # Filtreleme
-            mask = df.apply(lambda x: x.astype(str).str.contains(search_term, case=False, na=False)).any(axis=1)
-            filtered_df = df[mask]
-            
-            return filtered_df, "Başarılı"
-            
-        except Exception as e:
-            return None, f"Veri işleme hatası: {str(e)}"
+    except Exception as e:
+        return None, f"Hata oluştu: {str(e)}"
+
 
 
     st.header("📜 Mevzuat & Genelge Entegre Analiz Sistemi")
