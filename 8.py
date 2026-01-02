@@ -3333,7 +3333,7 @@ def main():
     with tabx7: render_visual_forensics_module(api_key)
     with tabx8: render_special_legislation_module(api_key)
     with tabx9: render_circular_cross_check_module(api_key)
-	with tabx10: render_defense_chronology_module(api_key)
+    with tabx10: render_defense_chronology_module(api_key)
     # --- TAB İÇERİKLERİ ---
 
     with tab1:
