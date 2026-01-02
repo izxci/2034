@@ -2776,12 +2776,17 @@ def render_circular_cross_check_module(api_key):
     from docx import Document
     from PIL import Image
     import requests
-    import pandas as pd
     import urllib3
     import urllib.parse
     from bs4 import BeautifulSoup
     import time
-    import feedparser # RSS okumak için
+    
+    # RSS Kütüphanesi Kontrolü (Hata vermemesi için try-except)
+    try:
+        import feedparser
+        rss_available = True
+    except ImportError:
+        rss_available = False
     
     # SSL Hatalarını Yoksay
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -2810,9 +2815,7 @@ def render_circular_cross_check_module(api_key):
         return text
 
     def fetch_kaysis_smart_search(search_term):
-        """
-        KAYSİS üzerinde arama yapar (Form tespiti + Proxy + Google Fallback).
-        """
+        """KAYSİS Arama Fonksiyonu"""
         base_url = "https://kms.kaysis.gov.tr"
         target_url = "https://kms.kaysis.gov.tr/Home/Kurum/24308110"
         API_KEY = "afe6d60b061ef600cbe8477886476f1a"
@@ -2866,7 +2869,6 @@ def render_circular_cross_check_module(api_key):
                 action_url = urllib.parse.urljoin(base_url, search_form.get("action", "")) if search_form.get("action") else target_url
                 
                 if used_method == "Proxy":
-                    # Proxy ile GET isteği (POST desteklenmezse)
                     req = requests.Request('GET', action_url, params=form_data)
                     payload['url'] = req.prepare().url
                     search_res = requests.get('http://api.scraperapi.com', params=payload, timeout=60)
@@ -2893,7 +2895,7 @@ def render_circular_cross_check_module(api_key):
                 if (search_form and search_input) or (search_term.replace('i','İ').upper() in txt.replace('i','İ').upper()):
                     results_list.append({"title": txt[:200], "link": full_link, "type": "Mevzuat" if link_tag else "Metin"})
 
-        # Fallback: Tüm linkler
+        # Fallback
         if not results_list:
             for link in soup.find_all("a"):
                 txt = link.get_text(strip=True)
@@ -2907,14 +2909,13 @@ def render_circular_cross_check_module(api_key):
     st.header("📜 Mevzuat & Genelge Entegre Analiz Sistemi")
     st.info("Tarım ve Orman Bakanlığı mevzuat hiyerarşisine göre belge denetimi, dosya analizi ve web taraması yapar.")
 
-    # !!! ÖNEMLİ: BURADA 6 TANE BAŞLIK OLDUĞUNDAN EMİN OLUN !!!
     tabs = st.tabs([
         "👮 Belge/Dosya Denetimi", 
         "💬 Mevzuat Soru-Cevap", 
         "🌐 Google Resmi Tarama", 
         "⚡ KAYSİS Akıllı Arama", 
         "🔄 Eski vs Yeni (Diff)",
-        "📢 Resmi Gazete & Bildirim" # 6. Sekme
+        "📢 Resmi Gazete & Bildirim"
     ])
 
     # ==========================================
@@ -3031,57 +3032,62 @@ def render_circular_cross_check_module(api_key):
     # ==========================================
     with tabs[5]:
         st.subheader("📢 Resmi Gazete Canlı Takip & Bildirim")
-        st.caption("Resmi Gazete RSS akışını tarar, 'Kanun/Yönetmelik/Tebliğ' içerenleri bulur ve AI ile özetleyip WhatsApp'a hazırlar.")
         
-        target_phone = "905427880956"
-        
-        if st.button("📰 Güncel Resmi Gazete'yi Tara"):
-            with st.spinner("Resmi Gazete taranıyor ve analiz ediliyor..."):
-                try:
-                    rss_url = "https://www.resmigazete.gov.tr/rss/eskiler.xml"
-                    feed = feedparser.parse(rss_url)
-                    
-                    found_entries = []
-                    keywords = ["kanun", "yönetmelik", "tebliğ", "karar"]
-                    
-                    for entry in feed.entries:
-                        if any(k in entry.title.lower() for k in keywords):
-                            found_entries.append(entry)
-                    
-                    if not found_entries:
-                        st.info("Bugün yayınlanan akışta önemli bir mevzuat değişikliği bulunamadı.")
-                    else:
-                        st.success(f"✅ {len(found_entries)} adet önemli değişiklik tespit edildi!")
+        if not rss_available:
+            st.error("⚠️ 'feedparser' kütüphanesi eksik!")
+            st.info("Lütfen 'requirements.txt' dosyasına 'feedparser' satırını ekleyin ve uygulamayı yeniden başlatın.")
+        else:
+            st.caption("Resmi Gazete RSS akışını tarar, 'Kanun/Yönetmelik/Tebliğ' içerenleri bulur ve AI ile özetleyip WhatsApp'a hazırlar.")
+            target_phone = "905427880956"
+            
+            if st.button("📰 Güncel Resmi Gazete'yi Tara"):
+                with st.spinner("Resmi Gazete taranıyor ve analiz ediliyor..."):
+                    try:
+                        rss_url = "https://www.resmigazete.gov.tr/rss/eskiler.xml"
+                        feed = feedparser.parse(rss_url)
                         
-                        for i, entry in enumerate(found_entries):
-                            with st.expander(f"📄 {entry.title}", expanded=True):
-                                st.write(f"**Tarih:** {entry.published}")
-                                st.write(f"**Link:** {entry.link}")
-                                
-                                # AI ile Özetleme
-                                summary_prompt = f"Resmi Gazete Başlığı: {entry.title}. Link: {entry.link}. Bunu 1 cümlede özetle ve WhatsApp için kısa bir mesaj taslağı oluştur."
-                                
-                                try:
-                                    ai_summary = get_ai_response(summary_prompt, api_key)
-                                    st.info(ai_summary)
-                                except:
-                                    ai_summary = f"YENİ MEVZUAT: {entry.title}"
+                        found_entries = []
+                        keywords = ["kanun", "yönetmelik", "tebliğ", "karar"]
+                        
+                        for entry in feed.entries:
+                            if any(k in entry.title.lower() for k in keywords):
+                                found_entries.append(entry)
+                        
+                        if not found_entries:
+                            st.info("Bugün yayınlanan akışta önemli bir mevzuat değişikliği bulunamadı.")
+                        else:
+                            st.success(f"✅ {len(found_entries)} adet önemli değişiklik tespit edildi!")
+                            
+                            for i, entry in enumerate(found_entries):
+                                with st.expander(f"📄 {entry.title}", expanded=True):
+                                    st.write(f"**Tarih:** {entry.published}")
+                                    st.write(f"**Link:** {entry.link}")
+                                    
+                                    # AI ile Özetleme
+                                    summary_prompt = f"Resmi Gazete Başlığı: {entry.title}. Link: {entry.link}. Bunu 1 cümlede özetle ve WhatsApp için kısa bir mesaj taslağı oluştur."
+                                    
+                                    try:
+                                        ai_summary = get_ai_response(summary_prompt, api_key)
+                                        st.info(ai_summary)
+                                    except:
+                                        ai_summary = f"YENİ MEVZUAT: {entry.title}"
 
-                                # WhatsApp Linki
-                                whatsapp_msg = f"*🔔 RESMİ GAZETE UYARISI*\n\n{ai_summary}\n\n🔗 {entry.link}"
-                                encoded_msg = urllib.parse.quote(whatsapp_msg)
-                                wa_link = f"https://wa.me/{target_phone}?text={encoded_msg}"
-                                
-                                st.markdown(f"""
-                                <a href="{wa_link}" target="_blank">
-                                    <button style="background-color:#25D366; color:white; border:none; padding:10px 20px; border-radius:5px; font-weight:bold; cursor:pointer;">
-                                        📲 WhatsApp ile Bildir ({target_phone})
-                                    </button>
-                                </a>
-                                """, unsafe_allow_html=True)
+                                    # WhatsApp Linki
+                                    whatsapp_msg = f"*🔔 RESMİ GAZETE UYARISI*\n\n{ai_summary}\n\n🔗 {entry.link}"
+                                    encoded_msg = urllib.parse.quote(whatsapp_msg)
+                                    wa_link = f"https://wa.me/{target_phone}?text={encoded_msg}"
+                                    
+                                    st.markdown(f"""
+                                    <a href="{wa_link}" target="_blank">
+                                        <button style="background-color:#25D366; color:white; border:none; padding:10px 20px; border-radius:5px; font-weight:bold; cursor:pointer;">
+                                            📲 WhatsApp ile Bildir ({target_phone})
+                                        </button>
+                                    </a>
+                                    """, unsafe_allow_html=True)
 
-                except Exception as e:
-                    st.error(f"RSS Okuma Hatası: {str(e)}")
+                    except Exception as e:
+                        st.error(f"RSS Okuma Hatası: {str(e)}")
+
 
 
 
