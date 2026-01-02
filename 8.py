@@ -2776,6 +2776,8 @@ def render_circular_cross_check_module(api_key):
     import pandas as pd
     import urllib3
     import urllib.parse
+    from bs4 import BeautifulSoup # HTML Analizi için
+    import time
     
     # SSL Hatalarını Yoksay
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -2803,46 +2805,80 @@ def render_circular_cross_check_module(api_key):
             return f"Hata: Dosya okunamadı. ({str(e)})"
         return text
 
-    # Performans için Cache eklendi (Aynı aramayı tekrar yaparsa API harcamaz)
-    @st.cache_data(show_spinner=False)
-    def fetch_kaysis_turbo_cached(url, search_term):
-        """ScraperAPI ile KAYSİS verisini çeker."""
-        # API Key (Sizin verdiğiniz)
-        API_KEY = "afe6d60b061ef600cbe8477886476f1a" 
+    # --- KAYSİS AKILLI ARAMA (Sizin Kodunuz + AI Entegrasyonu) ---
+    def fetch_kaysis_smart_search(search_term):
+        """
+        KAYSİS üzerinde Requests+BS4 ile arama yapar, linkleri bulur.
+        """
+        base_url = "https://kms.kaysis.gov.tr"
+        target_url = "https://kms.kaysis.gov.tr/Home/Kurum/24308110"
         
-        payload = {
-            'api_key': API_KEY, 
-            'url': url, 
-            'country_code': 'tr', # Türk IP'si
-            'render': 'true',     # JavaScript tabloları için
-            'premium': 'true'     # Daha kaliteli IP'ler için (Varsa)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
         }
+
+        # Cloud ortamında çalışması için Proxy Denemesi
+        # Eğer yerel bilgisayardaysanız doğrudan çalışır, Cloud'da ise Proxy devreye girer.
+        proxies = None
+        # İsteğe bağlı: Cloud'da çalışmıyorsa aşağıdaki satırı aktif edebilirsiniz
+        # proxies = {"http": "http://scraperapi:api_key@proxy-server.com:8001"} 
+
+        session = requests.Session()
+        session.headers.update(headers)
+        
+        results_list = []
         
         try:
-            # İstek atılıyor
-            response = requests.get('http://api.scraperapi.com', params=payload, timeout=60)
+            # 1. Sayfayı Çek
+            response = session.get(target_url, timeout=20, verify=False)
             
-            if response.status_code != 200: 
-                return None, f"Proxy Hatası: {response.status_code} - {response.text}"
+            if response.status_code != 200:
+                # Eğer doğrudan erişim yasaksa ScraperAPI (Proxy) devreye girsin
+                API_KEY = "afe6d60b061ef600cbe8477886476f1a"
+                payload = {'api_key': API_KEY, 'url': target_url, 'country_code': 'tr', 'render': 'true'}
+                response = requests.get('http://api.scraperapi.com', params=payload, timeout=60)
             
-            # Veri işleme
-            dfs = pd.read_html(response.content)
-            if not dfs: 
-                return None, "Sayfada tablo bulunamadı."
+            if response.status_code != 200:
+                return [], f"Bağlantı Hatası: {response.status_code}"
+
+            # 2. HTML Analizi (BeautifulSoup)
+            soup = BeautifulSoup(response.content, "html.parser")
             
-            df = dfs[0]
+            # Tablo satırlarını veya linkleri bul
+            # KAYSİS genelde tabloları 'tr' içinde tutar
+            rows = soup.find_all("tr")
             
-            # Filtreleme (Büyük/Küçük harf duyarsız)
-            # Türkçe karakter sorunu için basit replace
-            search_term_norm = search_term.replace('i', 'İ').upper()
-            
-            mask = df.apply(lambda x: x.astype(str).str.upper().str.replace('i', 'İ').str.contains(search_term_norm, na=False)).any(axis=1)
-            filtered_df = df[mask]
-            
-            return filtered_df, "Başarılı"
+            # Eğer tablo bulamazsa tüm linkleri ('a') tara
+            if not rows or len(rows) < 5:
+                links = soup.find_all("a")
+                for link in links:
+                    txt = link.get_text(strip=True)
+                    href = link.get('href')
+                    if txt and href and search_term.lower() in txt.lower():
+                        full_link = urllib.parse.urljoin(base_url, href)
+                        results_list.append({"title": txt, "link": full_link, "type": "Link"})
+            else:
+                # Tablo satırlarını işle
+                for row in rows:
+                    text_content = row.get_text(" ", strip=True)
+                    # Arama terimi satırda geçiyor mu? (Case insensitive)
+                    if search_term.replace('i','İ').upper() in text_content.replace('i','İ').upper():
+                        # Satır içindeki linki bul
+                        link_tag = row.find("a")
+                        if link_tag:
+                            href = link_tag.get('href')
+                            title = link_tag.get_text(strip=True) or text_content[:50]
+                            full_link = urllib.parse.urljoin(base_url, href)
+                            results_list.append({"title": title, "link": full_link, "type": "Mevzuat"})
+                        else:
+                            # Link yoksa sadece metin olarak ekle
+                            results_list.append({"title": text_content, "link": None, "type": "Metin"})
+
+            return results_list, "Başarılı"
 
         except Exception as e:
-            return None, f"İşlem Hatası: {str(e)}"
+            return [], f"Hata: {str(e)}"
 
     # --- ANA ARAYÜZ BAŞLANGICI ---
     try:
@@ -2854,7 +2890,7 @@ def render_circular_cross_check_module(api_key):
             "👮 Belge/Dosya Denetimi", 
             "💬 Mevzuat Soru-Cevap", 
             "🌐 Google Resmi Tarama", 
-            "⚡ KAYSİS Canlı Veri", 
+            "⚡ KAYSİS Akıllı Arama", 
             "🔄 Eski vs Yeni (Diff)"
         ])
 
@@ -2880,7 +2916,6 @@ def render_circular_cross_check_module(api_key):
                     if extracted == "GÖRSEL_İÇERİK":
                         st.image(uploaded_file, caption="Yüklenen Belge", width=300)
                         image_data = Image.open(uploaded_file)
-                        st.info("🖼️ Görsel içerik algılandı. AI analiz edecek.")
                     else:
                         user_text = st.text_area("Belge İçeriği", value=extracted, height=200)
                 else:
@@ -2891,7 +2926,6 @@ def render_circular_cross_check_module(api_key):
                     st.warning("Lütfen dosya yükleyin veya metin girin.")
                 else:
                     with st.spinner("Denetim yapılıyor..."):
-                        # NOT: get_ai_response fonksiyonunun ana kodunuzda tanımlı olduğu varsayılmıştır.
                         base_prompt = f"GÖREV: Tarım Bakanlığı Müfettişi. KAPSAM: {kanun_kapsami}. Uygunluk denetimi yap."
                         try:
                             if image_data:
@@ -2899,8 +2933,6 @@ def render_circular_cross_check_module(api_key):
                             else:
                                 response = get_ai_response(base_prompt + f"\nMETİN: {user_text}", api_key)
                             st.markdown(f"<div style='background-color:#f8f9fa; padding:15px; border-left:5px solid #d32f2f;'>{response}</div>", unsafe_allow_html=True)
-                        except NameError:
-                            st.error("Hata: 'get_ai_response' fonksiyonu bulunamadı. Lütfen ana kodunuzda tanımlı olduğundan emin olun.")
 
         # ==========================================
         # 2. SEKME: SORU - CEVAP
@@ -2922,63 +2954,67 @@ def render_circular_cross_check_module(api_key):
         with tabs[2]:
             st.subheader("🌐 Google Tabanlı Resmi Tarama")
             search_query = st.text_input("Aranacak Konu", placeholder="Örn: Çiğ Süt Tebliği")
-            
-            c1, c2 = st.columns(2)
-            with c1:
-                source_ministry = st.checkbox("Tarimorman.gov.tr", value=True)
-                source_mevzuat = st.checkbox("Mevzuat.gov.tr", value=True)
-            with c2:
-                source_kaysis_g = st.checkbox("KAYSİS (Google)", value=True)
-                source_resmi = st.checkbox("Resmi Gazete", value=False)
-            
             if st.button("🚀 Google ile Ara"):
-                sites = []
-                if source_ministry: sites.append("site:tarimorman.gov.tr")
-                if source_mevzuat: sites.append("site:mevzuat.gov.tr")
-                if source_resmi: sites.append("site:resmigazete.gov.tr")
-                if source_kaysis_g: sites.append("site:kms.kaysis.gov.tr")
-                
-                site_query = "(" + " OR ".join(sites) + ")" if sites else ""
-                final_query = f"{search_query} {site_query}"
-                
+                final_query = f"{search_query} (site:tarimorman.gov.tr OR site:mevzuat.gov.tr OR site:kms.kaysis.gov.tr)"
                 full_url = f"https://www.google.com/search?q={urllib.parse.quote(final_query)}"
                 st.markdown(f"<a href='{full_url}' target='_blank'><button style='background-color:#1976d2; color:white; padding:10px; width:100%; border:none; border-radius:5px;'>👉 SONUÇLARI GÖRMEK İÇİN TIKLAYIN</button></a>", unsafe_allow_html=True)
 
         # ==========================================
-        # 4. SEKME: TURBO KAYSİS (DÜZELTİLMİŞ)
+        # 4. SEKME: KAYSİS AKILLI ARAMA (YENİ ENTEGRASYON)
         # ==========================================
         with tabs[3]:
-            st.subheader("⚡ KAYSİS Canlı Veri (Turbo Mod)")
-            st.caption("Proxy üzerinden Bakanlık veritabanını sorgular.")
+            st.subheader("⚡ KAYSİS Akıllı Arama & AI Analizi")
+            st.caption("Bakanlık veritabanını tarar, linkleri bulur ve Yapay Zeka ile en doğrusunu seçer.")
             
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                kaysis_term = st.text_input("Mevzuat Adı veya İçerik Ara:", placeholder="Örn: Disiplin Amirleri Yönetmeliği")
-            with col2:
-                st.write("")
-                st.write("")
-                btn_turbo = st.button("⚡ Veriyi Çek")
-                
-            if btn_turbo:
+            kaysis_term = st.text_input("Mevzuat/Belge Adı:", placeholder="Örn: Disiplin Amirleri Yönetmeliği")
+            
+            if st.button("🔍 Ara ve Analiz Et"):
                 if not kaysis_term:
                     st.warning("Lütfen aranacak kelime girin.")
                 else:
-                    with st.spinner("Proxy üzerinden bağlanılıyor (Bu işlem 10-20 sn sürebilir)..."):
-                        url = "https://kms.kaysis.gov.tr/Home/Kurum/24308110"
+                    with st.spinner("KAYSİS taranıyor ve linkler toplanıyor..."):
+                        results, status = fetch_kaysis_smart_search(kaysis_term)
                         
-                        # Cache'li fonksiyonu çağırıyoruz
-                        df_result, status = fetch_kaysis_turbo_cached(url, kaysis_term)
-                        
-                        if df_result is not None and not df_result.empty:
-                            st.success(f"✅ {len(df_result)} adet kayıt bulundu!")
-                            st.dataframe(df_result, use_container_width=True)
+                        if results:
+                            st.success(f"✅ {len(results)} adet olası belge bulundu.")
                             
-                            csv = df_result.to_csv(index=False).encode('utf-8-sig')
-                            st.download_button("📥 Tabloyu İndir (Excel/CSV)", csv, "kaysis_sonuc.csv", "text/csv")
-                        elif df_result is not None:
-                            st.warning("⚠️ Tablo çekildi ancak aradığınız kelimeyle eşleşen kayıt bulunamadı.")
+                            # 1. Sonuçları Listele (Tıklanabilir Linkler)
+                            st.markdown("### 📄 Bulunan Belgeler")
+                            results_text_for_ai = ""
+                            
+                            for i, res in enumerate(results):
+                                link_html = f"<a href='{res['link']}' target='_blank'>🔗 {res['title']}</a>" if res['link'] else res['title']
+                                st.markdown(f"{i+1}. {link_html}", unsafe_allow_html=True)
+                                results_text_for_ai += f"- ID: {i+1}, Başlık: {res['title']}, Link: {res['link']}\n"
+                            
+                            # 2. AI Analizi Başlat
+                            st.divider()
+                            st.subheader("🤖 Yapay Zeka Analizi")
+                            with st.spinner("Yapay Zeka sonuçları analiz ediyor..."):
+                                ai_prompt = f"""
+                                GÖREV: Bir hukuk asistanısın. Kullanıcı '{kaysis_term}' hakkında arama yaptı.
+                                Aşağıda KAYSİS (Devlet Mevzuat Sistemi) üzerinde bulunan sonuçlar var.
+                                
+                                BULUNAN SONUÇLAR:
+                                {results_text_for_ai}
+                                
+                                İSTEK:
+                                1. Kullanıcının aradığına EN UYGUN olan belge hangisi? (ID ve Başlık belirt)
+                                2. Neden bu belgenin doğru olduğunu düşünüyorsun?
+                                3. Eğer aranan şey tam olarak yoksa, en yakın alternatifi öner.
+                                4. Cevabı kısa, net ve Türkçe ver.
+                                """
+                                
+                                try:
+                                    ai_analysis = get_ai_response(ai_prompt, api_key)
+                                    st.info(ai_analysis)
+                                except NameError:
+                                    st.error("AI fonksiyonu (get_ai_response) tanımlı değil.")
                         else:
-                            st.error(f"Hata: {status}")
+                            st.warning("⚠️ Sonuç bulunamadı.")
+                            if "Hata" in status:
+                                st.error(status)
+                                st.caption("İpucu: Eğer Cloud sunucudaysanız devlet sitesi engelliyor olabilir. Localhost'ta deneyin.")
 
         # ==========================================
         # 5. SEKME: DIFF
@@ -2991,12 +3027,12 @@ def render_circular_cross_check_module(api_key):
             if st.button("🔍 Farkları Göster") and old_text and new_text:
                 d = difflib.HtmlDiff()
                 html = d.make_file(old_text.splitlines(), new_text.splitlines(), fromdesc="Eski", todesc="Yeni")
-                # Tablo stilini düzelt
                 html = html.replace('table.diff {font-family:Courier; border:medium;}', 'table.diff {font-family:sans-serif; width:100%; border:1px solid #ddd;}')
                 st.components.v1.html(html, height=400, scrolling=True)
 
     except Exception as e:
         st.error(f"Modül yüklenirken kritik bir hata oluştu: {str(e)}")
+
 
 
 
