@@ -2771,39 +2771,67 @@ def render_circular_cross_check_module(api_key):
     from docx import Document
     from PIL import Image
     import io
+    
+    # --- YENİ EKLENEN KÜTÜPHANELER (Turbo Modül İçin) ---
+    import requests
+    import pandas as pd
+    import urllib3
+    # SSL Sertifika hatalarını (Devlet sitelerinde sık olur) görmezden gelmek için
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     # --- YARDIMCI FONKSİYONLAR ---
     def extract_text_from_file(uploaded_file):
         """Farklı dosya türlerinden metin okur."""
         text = ""
         file_type = uploaded_file.name.split('.')[-1].lower()
-        
         try:
             if file_type == 'pdf':
                 reader = PdfReader(uploaded_file)
-                for page in reader.pages:
-                    text += page.extract_text() + "\n"
+                for page in reader.pages: text += page.extract_text() + "\n"
             elif file_type == 'docx':
                 doc = Document(uploaded_file)
-                for para in doc.paragraphs:
-                    text += para.text + "\n"
+                for para in doc.paragraphs: text += para.text + "\n"
             elif file_type in ['txt', 'md']:
                 text = uploaded_file.read().decode("utf-8")
             elif file_type in ['jpg', 'jpeg', 'png', 'tiff', 'img']:
-                text = "GÖRSEL_İÇERİK" # Görsel işleme AI modeline bırakılacak
+                text = "GÖRSEL_İÇERİK"
         except Exception as e:
             return f"Hata: Dosya okunamadı. ({str(e)})"
-        
         return text
+
+    def fetch_kaysis_turbo(url, search_term):
+        """
+        Tarayıcı açmadan (Selenium'suz), doğrudan HTML isteği atarak veriyi çeker.
+        """
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        try:
+            # 1. Siteye İstek At
+            response = requests.get(url, headers=headers, verify=False, timeout=10)
+            if response.status_code != 200: return None, f"Siteye erişilemedi. Kod: {response.status_code}"
+            
+            # 2. Tabloları Pandas ile Oku
+            dfs = pd.read_html(response.text)
+            if not dfs: return None, "Sayfada tablo bulunamadı."
+            
+            df = dfs[0] # İlk tabloyu al
+            
+            # 3. Python İçinde Filtrele
+            mask = df.apply(lambda x: x.astype(str).str.contains(search_term, case=False, na=False)).any(axis=1)
+            filtered_df = df[mask]
+            
+            return filtered_df, "Başarılı"
+        except Exception as e:
+            return None, str(e)
 
     st.header("📜 Mevzuat & Genelge Entegre Analiz Sistemi")
     st.info("Tarım ve Orman Bakanlığı mevzuat hiyerarşisine göre belge denetimi, dosya analizi ve web taraması yapar.")
 
-    # --- SEKME YAPISI ---
+    # --- SEKME YAPISI (YENİ SEKME EKLENDİ) ---
     tabs = st.tabs([
         "👮 Belge/Dosya Denetimi", 
         "💬 Mevzuat Soru-Cevap", 
-        "🌐 Bakanlık Site Tarama", 
+        "🌐 Google Resmi Tarama", 
+        "⚡ KAYSİS Canlı Veri",  # <--- YENİ SEKME
         "🔄 Eski vs Yeni (Diff)"
     ])
 
@@ -2812,209 +2840,132 @@ def render_circular_cross_check_module(api_key):
     # ==========================================
     with tabs[0]:
         st.subheader("📂 Belge Yükle ve Denetle")
-        
         col1, col2 = st.columns([1, 2])
-        
         with col1:
             kanun_kapsami = st.selectbox("İlgili Kanun/Alan", [
-                "5996 s.K. - Gıda/Yem/Veteriner",
-                "5403 s.K. - Toprak Koruma",
-                "4342 s.K. - Mera",
-                "3083 s.K. - Arazi Düzenleme",
-                "1163 s.K. - Kooperatifler",
-                "5488 s.K. - Tarım Destekleri"
+                "5996 s.K. - Gıda/Yem/Veteriner", "5403 s.K. - Toprak Koruma",
+                "4342 s.K. - Mera", "3083 s.K. - Arazi Düzenleme",
+                "1163 s.K. - Kooperatifler", "5488 s.K. - Tarım Destekleri"
             ])
-            
             uploaded_file = st.file_uploader("Dosya Yükle", type=['pdf', 'docx', 'txt', 'jpg', 'png', 'tiff'])
-            
         with col2:
             user_text = ""
             image_data = None
-            
             if uploaded_file:
                 st.success(f"Dosya yüklendi: {uploaded_file.name}")
                 extracted = extract_text_from_file(uploaded_file)
-                
                 if extracted == "GÖRSEL_İÇERİK":
                     st.image(uploaded_file, caption="Yüklenen Belge", width=300)
                     image_data = Image.open(uploaded_file)
-                    st.info("🖼️ Görsel içerik algılandı. AI, metni görselden okuyarak analiz edecek.")
+                    st.info("🖼️ Görsel içerik algılandı. AI analiz edecek.")
                 else:
-                    user_text = st.text_area("Belge İçeriği (Düzenlenebilir)", value=extracted, height=200)
+                    user_text = st.text_area("Belge İçeriği", value=extracted, height=200)
             else:
-                user_text = st.text_area("Veya Metni Buraya Yapıştırın", height=200, placeholder="Savunma metni veya genelge maddesini buraya girin...")
+                user_text = st.text_area("Veya Metni Buraya Yapıştırın", height=200)
 
         if st.button("🛡️ Hiyerarşik Denetimi Başlat") and api_key:
             if not user_text and not image_data:
-                st.warning("Lütfen bir dosya yükleyin veya metin girin.")
+                st.warning("Lütfen dosya yükleyin veya metin girin.")
             else:
-                with st.spinner("Bakanlık talimatları ve güncel genelgeler taranıyor..."):
-                    
-                    # Prompt Hazırlığı
-                    base_prompt = f"""
-                    GÖREV: T.C. Tarım ve Orman Bakanlığı Başmüfettişi gibi davran.
-                    KAPSAM: {kanun_kapsami}
-                    
-                    ANALİZ İSTEĞİ:
-                    1. Bu metin/belge, ilgili kanuna ve Bakanlık teamüllerine uygun mu?
-                    2. Normlar Hiyerarşisi (Kanun > Yönetmelik > Genelge) açısından bir risk var mı?
-                    3. Varsa eksiklikleri veya riskleri "Resmi Dille" uyar.
-                    """
-                    
+                with st.spinner("Denetim yapılıyor..."):
+                    base_prompt = f"GÖREV: Tarım Bakanlığı Müfettişi. KAPSAM: {kanun_kapsami}. Uygunluk denetimi yap."
                     if image_data:
-                        # Görsel Analiz (Multimodal)
-                        response = get_ai_response([base_prompt + "\nEkli görseldeki metni analiz et.", image_data], api_key)
+                        response = get_ai_response([base_prompt, image_data], api_key)
                     else:
-                        # Metin Analiz
                         response = get_ai_response(base_prompt + f"\nMETİN: {user_text}", api_key)
-                    
-                    st.markdown("### 📋 Denetim Raporu")
-                    st.markdown(f"<div style='background-color:#f8f9fa; padding:15px; border-left:5px solid #d32f2f; border-radius:5px;'>{response}</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='background-color:#f8f9fa; padding:15px; border-left:5px solid #d32f2f;'>{response}</div>", unsafe_allow_html=True)
 
     # ==========================================
-    # 2. SEKME: SORU - CEVAP (Q&A)
+    # 2. SEKME: SORU - CEVAP
     # ==========================================
     with tabs[1]:
         st.subheader("💬 Mevzuat Danışmanı")
-        st.caption("Yüklediğiniz dosya veya genel mevzuat hakkında soru sorun.")
-        
-        soru = st.text_input("Sorunuzu yazın:", placeholder="Örn: Bu genelgeye göre 2024 yılı destekleme başvurusu ne zaman biter?")
-        
+        soru = st.text_input("Sorunuzu yazın:", placeholder="Örn: Destekleme başvurusu ne zaman?")
         if st.button("Soru Sor") and api_key:
-            context = ""
-            if uploaded_file and user_text:
-                context = f"BAĞLAM (YÜKLENEN DOSYA): {user_text[:2000]}..." # İlk 2000 karakteri bağlam olarak al
-            
-            prompt_qa = f"""
-            Sen uzman bir hukuk asistanısın.
-            {context}
-            
-            SORU: {soru}
-            
-            CEVAP (Kısa, net ve mevzuat referanslı olsun):
-            """
+            context = f"BAĞLAM: {user_text[:2000]}..." if user_text else ""
             with st.spinner("Cevap hazırlanıyor..."):
-                cevap = get_ai_response(prompt_qa, api_key)
-                st.write(cevap)
+                st.write(get_ai_response(f"{context}\nSORU: {soru}", api_key))
 
     # ==========================================
-    # 3. SEKME: GELİŞMİŞ RESMİ TARAMA (KAYSİS EKLENDİ)
+    # 3. SEKME: GOOGLE RESMİ TARAMA (ESKİ KODUNUZ)
     # ==========================================
     with tabs[2]:
-        st.subheader("🌐 Gelişmiş Resmi Veri Tarama")
-        st.caption("Bakanlık sitesi, KAYSİS, Mevzuat.gov.tr ve Resmi Gazete içinde çapraz arama yapar.")
+        st.subheader("🌐 Google Tabanlı Resmi Tarama")
+        st.caption("Bakanlık sitesi ve Resmi Gazete içinde Google altyapısıyla arama yapar.")
+        search_query = st.text_input("Aranacak Konu", placeholder="Örn: Çiğ Süt Tebliği")
         
-        # Arama Terimi
-        search_query = st.text_input("Aranacak Konu/Kelime", placeholder="Örn: Çiğ Süt Desteklemesi Uygulama Tebliği")
-        
-        # Kaynak Seçimi
-        st.write("🔎 **Hangi Kaynaklarda Aransın?**")
         c1, c2 = st.columns(2)
-        
         with c1:
             source_ministry = st.checkbox("Tarimorman.gov.tr", value=True)
-            source_mevzuat = st.checkbox("Mevzuat.gov.tr (Genel)", value=True)
-            
+            source_mevzuat = st.checkbox("Mevzuat.gov.tr", value=True)
         with c2:
-            # BURASI EKLENDİ: KAYSİS
-            source_kaysis = st.checkbox("KAYSİS (Bakanlık İç Mevzuatı)", value=True, help="https://kms.kaysis.gov.tr/Home/Kurum/24308110 adresini tarar.")
+            source_kaysis_g = st.checkbox("KAYSİS (Google)", value=True)
             source_resmi = st.checkbox("Resmi Gazete", value=False)
+        
+        if st.button("🚀 Google ile Ara"):
+            sites = []
+            if source_ministry: sites.append("site:tarimorman.gov.tr")
+            if source_mevzuat: sites.append("site:mevzuat.gov.tr")
+            if source_resmi: sites.append("site:resmigazete.gov.tr")
+            if source_kaysis_g: sites.append("site:kms.kaysis.gov.tr")
             
-        # Ekstra Link Seçeneği
-        extra_site = st.text_input("🔗 Varsa Özel Link Ekle (Opsiyonel)", placeholder="Örn: tigem.gov.tr")
-        
-        # Filtreler
-        st.divider()
-        f1, f2 = st.columns(2)
-        with f1:
-            file_filter = st.checkbox("Sadece PDF Dosyaları", value=True)
-        with f2:
-            year_filter = st.checkbox("Sadece Güncel (2023-2026)", value=True)
-        
-        if st.button("🚀 Resmi Kaynaklarda Ara"):
-            if not search_query:
-                st.warning("Lütfen aranacak bir kelime girin.")
-            else:
-                # Site Listesi Oluşturma
-                sites = []
-                if source_ministry: sites.append("site:tarimorman.gov.tr")
-                if source_mevzuat: sites.append("site:mevzuat.gov.tr")
-                if source_resmi: sites.append("site:resmigazete.gov.tr")
-                
-                # KAYSİS İÇİN ÖZEL ARAMA MANTIĞI
-                if source_kaysis:
-                    # Google'da spesifik ID ile aramak bazen sonuç vermeyebilir, 
-                    # bu yüzden tüm KAYSİS içinde arayıp "Tarım ve Orman" filtresi eklemek daha garantidir.
-                    sites.append("site:kms.kaysis.gov.tr")
-                
-                if extra_site: 
-                    # Kullanıcı http/https girdiyse temizle
-                    clean_site = extra_site.replace('https://', '').replace('http://', '').strip('/')
-                    sites.append(f"site:{clean_site}")
-                
-                # Site sorgusunu birleştirme (OR mantığı)
-                if sites:
-                    site_query = "(" + " OR ".join(sites) + ")"
-                else:
-                    site_query = "" 
-                
-                # Ana Sorgu
-                final_query = f"{search_query} {site_query}"
-                
-                # KAYSİS seçiliyse, sonuçların karışmaması için bakanlık ismini de sorguya ekleyelim
-                if source_kaysis and "Tarım" not in search_query:
-                    final_query += " (Tarım ve Orman Bakanlığı)"
-
-                if file_filter:
-                    final_query += " filetype:pdf"
-                if year_filter:
-                    final_query += " after:2023-01-01"
-                
-                # URL Oluşturma
-                import urllib.parse
-                base_url = "https://www.google.com/search?q="
-                encoded_query = urllib.parse.quote(final_query)
-                full_url = f"{base_url}{encoded_query}"
-                
-                st.success("🔍 Özel arama motoru yapılandırıldı!")
-                st.markdown(f"""
-                <a href="{full_url}" target="_blank" style="text-decoration:none;">
-                    <button style="
-                        background-color:#2e7d32; 
-                        color:white; 
-                        padding:12px 24px; 
-                        border:none; 
-                        border-radius:8px; 
-                        font-size:16px; 
-                        font-weight:bold;
-                        cursor:pointer; 
-                        width:100%;
-                        box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-                        👉 SONUÇLARI GÖRMEK İÇİN TIKLAYIN
-                    </button>
-                </a>
-                """, unsafe_allow_html=True)
-                
-                # Sorgu Önizleme
-                st.caption(f"Arka planda çalışan sorgu: `{final_query}`")
+            site_query = "(" + " OR ".join(sites) + ")" if sites else ""
+            final_query = f"{search_query} {site_query}"
+            
+            import urllib.parse
+            full_url = f"https://www.google.com/search?q={urllib.parse.quote(final_query)}"
+            st.markdown(f"<a href='{full_url}' target='_blank'><button style='background-color:#1976d2; color:white; padding:10px; width:100%; border:none; border-radius:5px;'>👉 SONUÇLARI GÖRMEK İÇİN TIKLAYIN</button></a>", unsafe_allow_html=True)
 
     # ==========================================
-    # 4. SEKME: DIFF (DEĞİŞİKLİK ANALİZİ)
+    # 4. SEKME: TURBO KAYSİS (YENİ EKLENDİ)
     # ==========================================
     with tabs[3]:
+        st.subheader("⚡ KAYSİS Canlı Veri (Turbo Mod)")
+        st.caption("Tarayıcı açmadan, doğrudan Bakanlık veritabanını saniyeler içinde çeker ve filtreler.")
+        
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            kaysis_term = st.text_input("Mevzuat Adı veya İçerik Ara:", placeholder="Örn: Disiplin Amirleri Yönetmeliği")
+        with col2:
+            st.write("")
+            st.write("")
+            btn_turbo = st.button("⚡ Veriyi Çek")
+            
+        if btn_turbo:
+            if not kaysis_term:
+                st.warning("Lütfen aranacak kelime girin.")
+            else:
+                with st.spinner("Bakanlık sunucusuna bağlanılıyor..."):
+                    # Tarım Bakanlığı KAYSİS ID: 24308110
+                    url = "https://kms.kaysis.gov.tr/Home/Kurum/24308110"
+                    df_result, status = fetch_kaysis_turbo(url, kaysis_term)
+                    
+                    if df_result is not None and not df_result.empty:
+                        st.success(f"✅ {len(df_result)} adet kayıt bulundu!")
+                        st.dataframe(df_result, use_container_width=True)
+                        
+                        # CSV İndir
+                        csv = df_result.to_csv(index=False).encode('utf-8-sig')
+                        st.download_button("📥 Tabloyu İndir (Excel/CSV)", csv, "kaysis_sonuc.csv", "text/csv")
+                    elif df_result is not None:
+                        st.warning("⚠️ Tablo çekildi ancak aradığınız kelimeyle eşleşen kayıt bulunamadı.")
+                    else:
+                        st.error(f"Hata: {status}")
+
+    # ==========================================
+    # 5. SEKME: DIFF
+    # ==========================================
+    with tabs[4]:
         st.subheader("⚖️ Eski vs Yeni Karşılaştırma")
         c1, c2 = st.columns(2)
-        with c1:
-            old_text = st.text_area("🔴 Eski Metin", height=150)
-        with c2:
-            new_text = st.text_area("🟢 Yeni Metin", height=150)
-            
-        if st.button("🔍 Farkları Göster"):
-            if old_text and new_text:
-                d = difflib.HtmlDiff()
-                html_diff = d.make_file(old_text.splitlines(), new_text.splitlines(), fromdesc="Eski", todesc="Yeni")
-                html_diff = html_diff.replace('table.diff {font-family:Courier; border:medium;}', 'table.diff {font-family:sans-serif; width:100%; border:1px solid #ddd;}')
-                st.components.v1.html(html_diff, height=400, scrolling=True)
+        with c1: old_text = st.text_area("🔴 Eski Metin", height=150)
+        with c2: new_text = st.text_area("🟢 Yeni Metin", height=150)
+        if st.button("🔍 Farkları Göster") and old_text and new_text:
+            d = difflib.HtmlDiff()
+            html = d.make_file(old_text.splitlines(), new_text.splitlines(), fromdesc="Eski", todesc="Yeni")
+            html = html.replace('table.diff {font-family:Courier; border:medium;}', 'table.diff {font-family:sans-serif; width:100%; border:1px solid #ddd;}')
+            st.components.v1.html(html, height=400, scrolling=True)
+
 
 
 
