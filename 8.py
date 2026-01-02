@@ -2765,6 +2765,9 @@ def render_special_legislation_module(api_key):
             st.markdown(f"<div style='background-color:#f0f2f6; padding:15px; border-radius:10px; border-left:5px solid #2e7d32;'>{cevap}</div>", unsafe_allow_html=True)
 
 
+
+
+
 def render_circular_cross_check_module(api_key):
     # --- KÜTÜPHANELER ---
     import streamlit as st
@@ -2805,19 +2808,24 @@ def render_circular_cross_check_module(api_key):
             return f"Hata: Dosya okunamadı. ({str(e)})"
         return text
 
+    # --- SİZİN VERDİĞİNİZ GELİŞMİŞ ARAMA KODU (ENTEGRE EDİLDİ) ---
     def fetch_kaysis_smart_search(search_term):
         """
-        KAYSİS üzerinde önce doğrudan, olmazsa Proxy ile arama yapar.
+        KAYSİS üzerinde arama yapar.
+        Önce sayfadaki arama formunu bulup sunucu taraflı arama yapmayı dener.
+        Eğer form bulunamazsa, sayfa içeriğinde metin bazlı arama yapar.
+        Doğrudan bağlantı başarısız olursa Proxy (ScraperAPI) dener.
         """
         base_url = "https://kms.kaysis.gov.tr"
         target_url = "https://kms.kaysis.gov.tr/Home/Kurum/24308110"
         
-        # ScraperAPI Key (Sizin verdiğiniz)
+        # ScraperAPI Key
         API_KEY = "afe6d60b061ef600cbe8477886476f1a"
         
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+            "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
         }
 
         session = requests.Session()
@@ -2826,14 +2834,15 @@ def render_circular_cross_check_module(api_key):
         response = None
         used_method = "Direct"
 
-        # 1. ADIM: Doğrudan Bağlantı Denemesi (Kısa Timeout)
+        # --- 1. ADIM: SAYFAYI GETİR ---
+        # st.write(f"Bağlanılıyor: {target_url}") # Debug için açılabilir
         try:
-            # Timeout'u 5 saniye yaptık, cevap vermezse hemen Proxy'ye geçsin.
-            response = session.get(target_url, timeout=5, verify=False)
+            response = session.get(target_url, timeout=10, verify=False)
             if response.status_code != 200:
                 raise Exception(f"Status Code: {response.status_code}")
+            # st.success("Doğrudan bağlantı başarılı.")
         except Exception as e:
-            # Doğrudan bağlantı başarısız olduysa Proxy'ye geç
+            # st.warning(f"Doğrudan bağlantı hatası: {e}. Proxy deneniyor...")
             used_method = "Proxy"
             try:
                 payload = {
@@ -2842,52 +2851,136 @@ def render_circular_cross_check_module(api_key):
                     'country_code': 'tr', 
                     'render': 'true' # JS render et
                 }
-                # Proxy için 60 saniye bekleme süresi
                 response = requests.get('http://api.scraperapi.com', params=payload, timeout=60)
+                if response.status_code != 200:
+                     raise Exception(f"Proxy Status Code: {response.status_code}")
             except Exception as proxy_error:
                 return [], f"Hem doğrudan hem proxy erişimi başarısız: {str(proxy_error)}"
 
-        # 2. ADIM: Yanıt Kontrolü
-        if not response or response.status_code != 200:
-            return [], f"Sunucu yanıt vermedi. (Yöntem: {used_method})"
+        if not response:
+            return [], "Yanıt alınamadı."
 
-        # 3. ADIM: HTML Analizi (BeautifulSoup)
+        # --- 2. ADIM: ARAMA FORMUNU BUL VE GÖNDER ---
+        soup = BeautifulSoup(response.content, "html.parser")
         results_list = []
-        try:
-            soup = BeautifulSoup(response.content, "html.parser")
+        
+        # Formu bulmaya çalış
+        search_form = None
+        search_input = None
+        
+        for form in soup.find_all("form"):
+            # Genellikle arama inputları text veya search tipindedir
+            inputs = form.find_all("input", type=["text", "search"])
+            for inp in inputs:
+                name = inp.get("name", "").lower()
+                id_val = inp.get("id", "").lower()
+                placeholder = inp.get("placeholder", "").lower()
+                
+                # Input'un arama inputu olup olmadığını anlamaya çalış
+                if any(x in name for x in ['search', 'ara', 'query', 'keyword', 'kelime']) or \
+                   any(x in id_val for x in ['search', 'ara', 'query']) or \
+                   any(x in placeholder for x in ['ara', 'search']):
+                    search_input = inp
+                    search_form = form
+                    break
+            if search_form:
+                break
+                
+        # Eğer form bulunduysa, sunucuya sorgu gönder (Server-Side Search)
+        if search_form and search_input:
+            # st.info(f"Arama formu bulundu. Sunucu taraflı arama yapılıyor... (Input: {search_input.get('name')})")
+            try:
+                # Form verilerini hazırla
+                form_data = {}
+                for inp in search_form.find_all("input"):
+                    if inp.get("name"):
+                        form_data[inp.get("name")] = inp.get("value", "")
+                
+                # Arama terimini ekle
+                form_data[search_input.get("name")] = search_term
+                
+                # Action URL
+                action = search_form.get("action", "")
+                if not action:
+                    action_url = target_url # Action yoksa kendine post et
+                else:
+                    action_url = urllib.parse.urljoin(base_url, action)
+                
+                # Method
+                method = search_form.get("method", "get").lower()
+                
+                # İsteği gönder
+                if used_method == "Proxy":
+                    if method == "get":
+                        # URL'e parametreleri ekle
+                        req = requests.Request('GET', action_url, params=form_data)
+                        prepped = req.prepare()
+                        payload['url'] = prepped.url
+                        search_res = requests.get('http://api.scraperapi.com', params=payload, timeout=60)
+                    else:
+                        # st.warning("Proxy ile POST isteği desteklenmiyor, sayfa içi aramaya geçiliyor.")
+                        search_res = response # İlk sayfayı kullan
+                else:
+                    # Doğrudan bağlantı
+                    if method == "post":
+                        search_res = session.post(action_url, data=form_data, headers=headers, verify=False)
+                    else:
+                        search_res = session.get(action_url, params=form_data, headers=headers, verify=False)
+                
+                # Sonuç sayfasını parse et
+                if search_res.status_code == 200:
+                    soup = BeautifulSoup(search_res.content, "html.parser")
+                
+            except Exception as e:
+                pass # Hata olursa mevcut sayfa üzerinden devam et
+
+        # --- 3. ADIM: SONUÇLARI AYIKLA ---
+        
+        # Kaysis genelde sonuçları tablo veya liste içinde verir.
+        found_items = soup.find_all(["tr", "div", "li"], class_=lambda x: x and ('result' in x or 'item' in x or 'row' in x))
+        
+        if not found_items:
+            found_items = soup.find_all("tr") # Tablo satırlarını dene
             
-            # Tablo satırlarını bul
-            rows = soup.find_all("tr")
+        for item in found_items:
+            # Metni al
+            txt = item.get_text(" ", strip=True)
             
-            # Eğer tablo bulamazsa tüm linkleri ('a') tara
-            if not rows or len(rows) < 5:
-                links = soup.find_all("a")
-                for link in links:
-                    txt = link.get_text(strip=True)
-                    href = link.get('href')
-                    if txt and href and search_term.lower() in txt.lower():
+            # Linki bul
+            link_tag = item.find("a")
+            full_link = None
+            if link_tag and link_tag.get("href"):
+                full_link = urllib.parse.urljoin(base_url, link_tag.get("href"))
+                if not txt: txt = link_tag.get_text(strip=True)
+                
+            # Filtreleme: Arama terimi geçiyor mu?
+            if txt and len(txt) > 5:
+                # Türkçe karakter duyarlılığını azaltmak için replace
+                txt_upper = txt.replace('i','İ').upper()
+                term_upper = search_term.replace('i','İ').upper()
+                
+                if (search_form and search_input) or (term_upper in txt_upper):
+                    results_list.append({
+                        "title": txt[:200], 
+                        "link": full_link,
+                        "type": "Mevzuat" if link_tag else "Metin"
+                    })
+
+        # Eğer yukarıdaki yöntemle hiç sonuç çıkmadıysa, sayfadaki TÜM linklere bak (Fallback)
+        if not results_list:
+            links = soup.find_all("a")
+            for link in links:
+                txt = link.get_text(strip=True)
+                href = link.get('href')
+                if txt and href:
+                    txt_upper = txt.replace('i','İ').upper()
+                    term_upper = search_term.replace('i','İ').upper()
+                    
+                    if term_upper in txt_upper:
                         full_link = urllib.parse.urljoin(base_url, href)
                         results_list.append({"title": txt, "link": full_link, "type": "Link"})
-            else:
-                # Tablo satırlarını işle
-                for row in rows:
-                    text_content = row.get_text(" ", strip=True)
-                    # Arama terimi satırda geçiyor mu? (Case insensitive)
-                    if search_term.replace('i','İ').upper() in text_content.replace('i','İ').upper():
-                        # Satır içindeki linki bul
-                        link_tag = row.find("a")
-                        if link_tag:
-                            href = link_tag.get('href')
-                            title = link_tag.get_text(strip=True) or text_content[:50]
-                            full_link = urllib.parse.urljoin(base_url, href)
-                            results_list.append({"title": title, "link": full_link, "type": "Mevzuat"})
-                        else:
-                            results_list.append({"title": text_content, "link": None, "type": "Metin"})
 
-            return results_list, "Başarılı"
-
-        except Exception as e:
-            return [], f"Veri işleme hatası: {str(e)}"
+        return results_list, "Başarılı"
 
     # --- ANA ARAYÜZ ---
     st.header("📜 Mevzuat & Genelge Entegre Analiz Sistemi")
@@ -2963,11 +3056,11 @@ def render_circular_cross_check_module(api_key):
             st.markdown(f"<a href='{full_url}' target='_blank'><button style='background-color:#1976d2; color:white; padding:10px; width:100%; border:none; border-radius:5px;'>👉 SONUÇLARI GÖRMEK İÇİN TIKLAYIN</button></a>", unsafe_allow_html=True)
 
     # ==========================================
-    # 4. SEKME: KAYSİS AKILLI ARAMA (GÜÇLENDİRİLMİŞ)
+    # 4. SEKME: KAYSİS AKILLI ARAMA (YENİ ENTEGRASYON)
     # ==========================================
     with tabs[3]:
         st.subheader("⚡ KAYSİS Akıllı Arama & AI Analizi")
-        st.caption("Bakanlık veritabanını tarar. (Devlet sitesi engellerse otomatik Proxy devreye girer)")
+        st.caption("Site içi arama formunu kullanarak doğrudan veritabanını sorgular.")
         
         kaysis_term = st.text_input("Mevzuat/Belge Adı:", placeholder="Örn: Disiplin Amirleri Yönetmeliği")
         
@@ -2975,18 +3068,23 @@ def render_circular_cross_check_module(api_key):
             if not kaysis_term:
                 st.warning("Lütfen aranacak kelime girin.")
             else:
-                with st.spinner("KAYSİS taranıyor (Proxy bağlantısı 30sn sürebilir)..."):
+                with st.spinner("KAYSİS taranıyor (Form tespiti ve sorgulama)..."):
                     results, status = fetch_kaysis_smart_search(kaysis_term)
                     
                     if results:
-                        st.success(f"✅ {len(results)} adet olası belge bulundu.")
+                        st.success(f"✅ {len(results)} adet belge bulundu.")
                         
                         # 1. Sonuçları Listele
                         st.markdown("### 📄 Bulunan Belgeler")
                         results_text_for_ai = ""
                         
                         for i, res in enumerate(results):
-                            link_html = f"<a href='{res['link']}' target='_blank'>🔗 {res['title']}</a>" if res['link'] else res['title']
+                            # Link varsa tıklanabilir yap, yoksa sadece metni göster
+                            if res['link']:
+                                link_html = f"<a href='{res['link']}' target='_blank'>🔗 {res['title']}</a>"
+                            else:
+                                link_html = f"{res['title']} (Link Bulunamadı)"
+                                
                             st.markdown(f"{i+1}. {link_html}", unsafe_allow_html=True)
                             results_text_for_ai += f"- ID: {i+1}, Başlık: {res['title']}, Link: {res['link']}\n"
                         
@@ -3011,19 +3109,12 @@ def render_circular_cross_check_module(api_key):
                             ai_analysis = get_ai_response(ai_prompt, api_key)
                             st.info(ai_analysis)
                     else:
-                        st.warning("⚠️ KAYSİS üzerinde sonuç bulunamadı veya site yanıt vermedi.")
+                        st.warning("⚠️ Sonuç bulunamadı.")
                         st.error(f"Sistem Mesajı: {status}")
                         
-                        # Google Alternatifi
-                        g_url = f"https://www.google.com/search?q={urllib.parse.quote(kaysis_term + ' site:kms.kaysis.gov.tr')}"
-                        st.markdown(f"""
-                        <br>
-                        <a href="{g_url}" target="_blank">
-                            <button style="background-color:#d32f2f; color:white; padding:12px; border:none; border-radius:5px; width:100%;">
-                                🌍 Google Üzerinden KAYSİS'i Tara (Kesin Çözüm)
-                            </button>
-                        </a>
-                        """, unsafe_allow_html=True)
+                        # Yedek Plan: Google
+                        g_url = f"https://www.google.com/search?q={urllib.parse.quote('site:kms.kaysis.gov.tr ' + kaysis_term)}"
+                        st.markdown(f"<a href='{g_url}' target='_blank'>👉 Google Üzerinden Aramayı Dene</a>", unsafe_allow_html=True)
 
     # ==========================================
     # 5. SEKME: DIFF
@@ -3038,12 +3129,6 @@ def render_circular_cross_check_module(api_key):
             html = d.make_file(old_text.splitlines(), new_text.splitlines(), fromdesc="Eski", todesc="Yeni")
             html = html.replace('table.diff {font-family:Courier; border:medium;}', 'table.diff {font-family:sans-serif; width:100%; border:1px solid #ddd;}')
             st.components.v1.html(html, height=400, scrolling=True)
-
-
-
-
-
-
 
 
 
