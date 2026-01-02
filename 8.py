@@ -3130,6 +3130,87 @@ def render_circular_cross_check_module(api_key):
             html = html.replace('table.diff {font-family:Courier; border:medium;}', 'table.diff {font-family:sans-serif; width:100%; border:1px solid #ddd;}')
             st.components.v1.html(html, height=400, scrolling=True)
 
+        # ==========================================
+        # 6. SEKME: RESMİ GAZETE & WHATSAPP BİLDİRİM
+        # ==========================================
+        with tabs[5]:
+            st.subheader("📢 Resmi Gazete Canlı Takip & Bildirim")
+            st.caption("Resmi Gazete RSS akışını tarar, 'Kanun/Yönetmelik/Tebliğ' içerenleri bulur ve AI ile özetleyip WhatsApp'a hazırlar.")
+            
+            target_phone = "905427880956" # Sizin numaranız
+            
+            if st.button("📰 Güncel Resmi Gazete'yi Tara"):
+                with st.spinner("Resmi Gazete taranıyor ve analiz ediliyor..."):
+                    try:
+                        # 1. RSS Verisini Çek
+                        rss_url = "https://www.resmigazete.gov.tr/rss/eskiler.xml"
+                        feed = feedparser.parse(rss_url)
+                        
+                        found_entries = []
+                        keywords = ["kanun", "yönetmelik", "tebliğ", "karar"]
+                        
+                        # 2. Filtreleme
+                        for entry in feed.entries:
+                            title = entry.title.lower()
+                            if any(k in title for k in keywords):
+                                found_entries.append(entry)
+                        
+                        if not found_entries:
+                            st.info("Bugün yayınlanan akışta önemli bir mevzuat değişikliği (Kanun/Yönetmelik/Tebliğ) bulunamadı.")
+                        else:
+                            st.success(f"✅ {len(found_entries)} adet önemli değişiklik tespit edildi!")
+                            
+                            # Her bir kayıt için işlem yap
+                            for i, entry in enumerate(found_entries):
+                                with st.expander(f"📄 {entry.title}", expanded=True):
+                                    st.write(f"**Tarih:** {entry.published}")
+                                    st.write(f"**Link:** {entry.link}")
+                                    
+                                    # 3. AI ile Özetleme
+                                    summary_prompt = f"""
+                                    GÖREV: Resmi Gazete'de yayınlanan şu başlığı ve içeriği analiz et.
+                                    BAŞLIK: {entry.title}
+                                    LİNK: {entry.link}
+                                    
+                                    İSTEK:
+                                    1. Bu değişikliğin ne olduğunu 1 cümle ile özetle.
+                                    2. Tarım/Gıda sektörüyle ilgisi var mı? Varsa belirt.
+                                    3. WhatsApp mesajı formatında kısa bir metin hazırla.
+                                    """
+                                    
+                                    # AI Yanıtı (Hata yönetimi ile)
+                                    ai_summary = "AI Özeti hazırlanamadı."
+                                    try:
+                                        ai_summary = get_ai_response(summary_prompt, api_key)
+                                        st.info(ai_summary)
+                                    except:
+                                        st.warning("AI modülü yanıt vermedi, ham metin gönderilecek.")
+                                        ai_summary = f"YENİ MEVZUAT:\n{entry.title}\nLink: {entry.link}"
+
+                                    # 4. WhatsApp Linki Oluşturma
+                                    # Mesajı URL uyumlu hale getir
+                                    whatsapp_msg = f"*🔔 RESMİ GAZETE UYARISI*\n\n{ai_summary}\n\n🔗 {entry.link}"
+                                    encoded_msg = urllib.parse.quote(whatsapp_msg)
+                                    
+                                    wa_link = f"https://wa.me/{target_phone}?text={encoded_msg}"
+                                    
+                                    st.markdown(f"""
+                                    <a href="{wa_link}" target="_blank">
+                                        <button style="
+                                            background-color:#25D366; 
+                                            color:white; 
+                                            border:none; 
+                                            padding:10px 20px; 
+                                            border-radius:5px; 
+                                            font-weight:bold; 
+                                            cursor:pointer;">
+                                            📲 WhatsApp ile Bildir ({target_phone})
+                                        </button>
+                                    </a>
+                                    """, unsafe_allow_html=True)
+
+                    except Exception as e:
+                        st.error(f"RSS Okuma Hatası: {str(e)}")
 
 
 # --- ANA UYGULAMA ---
