@@ -2914,7 +2914,7 @@ def main():
     with tabx5: render_cost_calculator_module(api_key)
     with tabx6: render_forensic_map_module(api_key)
     with tabx7: render_visual_forensics_module(api_key)
-	with tabx8: render_special_legislation_module(api_key)
+    with tabx8: render_special_legislation_module(api_key)
     # --- TAB İÇERİKLERİ ---
 
     with tab1:
