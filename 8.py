@@ -2781,6 +2781,7 @@ def render_circular_cross_check_module(api_key):
     import urllib.parse
     from bs4 import BeautifulSoup
     import time
+    import feedparser # RSS okumak için
     
     # SSL Hatalarını Yoksay
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -2808,18 +2809,12 @@ def render_circular_cross_check_module(api_key):
             return f"Hata: Dosya okunamadı. ({str(e)})"
         return text
 
-    # --- SİZİN VERDİĞİNİZ GELİŞMİŞ ARAMA KODU (ENTEGRE EDİLDİ) ---
     def fetch_kaysis_smart_search(search_term):
         """
-        KAYSİS üzerinde arama yapar.
-        Önce sayfadaki arama formunu bulup sunucu taraflı arama yapmayı dener.
-        Eğer form bulunamazsa, sayfa içeriğinde metin bazlı arama yapar.
-        Doğrudan bağlantı başarısız olursa Proxy (ScraperAPI) dener.
+        KAYSİS üzerinde arama yapar (Form tespiti + Proxy + Google Fallback).
         """
         base_url = "https://kms.kaysis.gov.tr"
         target_url = "https://kms.kaysis.gov.tr/Home/Kurum/24308110"
-        
-        # ScraperAPI Key
         API_KEY = "afe6d60b061ef600cbe8477886476f1a"
         
         headers = {
@@ -2834,151 +2829,77 @@ def render_circular_cross_check_module(api_key):
         response = None
         used_method = "Direct"
 
-        # --- 1. ADIM: SAYFAYI GETİR ---
-        # st.write(f"Bağlanılıyor: {target_url}") # Debug için açılabilir
+        # 1. ADIM: SAYFAYI GETİR
         try:
             response = session.get(target_url, timeout=10, verify=False)
-            if response.status_code != 200:
-                raise Exception(f"Status Code: {response.status_code}")
-            # st.success("Doğrudan bağlantı başarılı.")
+            if response.status_code != 200: raise Exception(f"Status: {response.status_code}")
         except Exception as e:
-            # st.warning(f"Doğrudan bağlantı hatası: {e}. Proxy deneniyor...")
             used_method = "Proxy"
             try:
-                payload = {
-                    'api_key': API_KEY, 
-                    'url': target_url, 
-                    'country_code': 'tr', 
-                    'render': 'true' # JS render et
-                }
+                payload = {'api_key': API_KEY, 'url': target_url, 'country_code': 'tr', 'render': 'true'}
                 response = requests.get('http://api.scraperapi.com', params=payload, timeout=60)
-                if response.status_code != 200:
-                     raise Exception(f"Proxy Status Code: {response.status_code}")
-            except Exception as proxy_error:
-                return [], f"Hem doğrudan hem proxy erişimi başarısız: {str(proxy_error)}"
+            except:
+                return [], "Bağlantı başarısız."
 
-        if not response:
-            return [], "Yanıt alınamadı."
+        if not response or response.status_code != 200: return [], "Yanıt yok."
 
-        # --- 2. ADIM: ARAMA FORMUNU BUL VE GÖNDER ---
+        # 2. ADIM: ARAMA FORMUNU BUL VE GÖNDER
         soup = BeautifulSoup(response.content, "html.parser")
         results_list = []
-        
-        # Formu bulmaya çalış
-        search_form = None
-        search_input = None
+        search_form, search_input = None, None
         
         for form in soup.find_all("form"):
-            # Genellikle arama inputları text veya search tipindedir
             inputs = form.find_all("input", type=["text", "search"])
             for inp in inputs:
                 name = inp.get("name", "").lower()
                 id_val = inp.get("id", "").lower()
-                placeholder = inp.get("placeholder", "").lower()
-                
-                # Input'un arama inputu olup olmadığını anlamaya çalış
-                if any(x in name for x in ['search', 'ara', 'query', 'keyword', 'kelime']) or \
-                   any(x in id_val for x in ['search', 'ara', 'query']) or \
-                   any(x in placeholder for x in ['ara', 'search']):
+                if any(x in name for x in ['search', 'ara', 'query']) or any(x in id_val for x in ['search', 'ara']):
                     search_input = inp
                     search_form = form
                     break
-            if search_form:
-                break
-                
-        # Eğer form bulunduysa, sunucuya sorgu gönder (Server-Side Search)
+            if search_form: break
+            
         if search_form and search_input:
-            # st.info(f"Arama formu bulundu. Sunucu taraflı arama yapılıyor... (Input: {search_input.get('name')})")
             try:
-                # Form verilerini hazırla
-                form_data = {}
-                for inp in search_form.find_all("input"):
-                    if inp.get("name"):
-                        form_data[inp.get("name")] = inp.get("value", "")
-                
-                # Arama terimini ekle
+                form_data = {inp.get("name"): inp.get("value", "") for inp in search_form.find_all("input") if inp.get("name")}
                 form_data[search_input.get("name")] = search_term
+                action_url = urllib.parse.urljoin(base_url, search_form.get("action", "")) if search_form.get("action") else target_url
                 
-                # Action URL
-                action = search_form.get("action", "")
-                if not action:
-                    action_url = target_url # Action yoksa kendine post et
-                else:
-                    action_url = urllib.parse.urljoin(base_url, action)
-                
-                # Method
-                method = search_form.get("method", "get").lower()
-                
-                # İsteği gönder
                 if used_method == "Proxy":
-                    if method == "get":
-                        # URL'e parametreleri ekle
-                        req = requests.Request('GET', action_url, params=form_data)
-                        prepped = req.prepare()
-                        payload['url'] = prepped.url
-                        search_res = requests.get('http://api.scraperapi.com', params=payload, timeout=60)
-                    else:
-                        # st.warning("Proxy ile POST isteği desteklenmiyor, sayfa içi aramaya geçiliyor.")
-                        search_res = response # İlk sayfayı kullan
+                    # Proxy ile GET isteği (POST desteklenmezse)
+                    req = requests.Request('GET', action_url, params=form_data)
+                    payload['url'] = req.prepare().url
+                    search_res = requests.get('http://api.scraperapi.com', params=payload, timeout=60)
                 else:
-                    # Doğrudan bağlantı
-                    if method == "post":
+                    if search_form.get("method", "get").lower() == "post":
                         search_res = session.post(action_url, data=form_data, headers=headers, verify=False)
                     else:
                         search_res = session.get(action_url, params=form_data, headers=headers, verify=False)
                 
-                # Sonuç sayfasını parse et
-                if search_res.status_code == 200:
-                    soup = BeautifulSoup(search_res.content, "html.parser")
-                
-            except Exception as e:
-                pass # Hata olursa mevcut sayfa üzerinden devam et
+                if search_res.status_code == 200: soup = BeautifulSoup(search_res.content, "html.parser")
+            except: pass
 
-        # --- 3. ADIM: SONUÇLARI AYIKLA ---
-        
-        # Kaysis genelde sonuçları tablo veya liste içinde verir.
+        # 3. ADIM: SONUÇLARI AYIKLA
         found_items = soup.find_all(["tr", "div", "li"], class_=lambda x: x and ('result' in x or 'item' in x or 'row' in x))
-        
-        if not found_items:
-            found_items = soup.find_all("tr") # Tablo satırlarını dene
+        if not found_items: found_items = soup.find_all("tr")
             
         for item in found_items:
-            # Metni al
             txt = item.get_text(" ", strip=True)
-            
-            # Linki bul
             link_tag = item.find("a")
-            full_link = None
-            if link_tag and link_tag.get("href"):
-                full_link = urllib.parse.urljoin(base_url, link_tag.get("href"))
-                if not txt: txt = link_tag.get_text(strip=True)
+            full_link = urllib.parse.urljoin(base_url, link_tag.get("href")) if link_tag and link_tag.get("href") else None
+            if not txt and link_tag: txt = link_tag.get_text(strip=True)
                 
-            # Filtreleme: Arama terimi geçiyor mu?
             if txt and len(txt) > 5:
-                # Türkçe karakter duyarlılığını azaltmak için replace
-                txt_upper = txt.replace('i','İ').upper()
-                term_upper = search_term.replace('i','İ').upper()
-                
-                if (search_form and search_input) or (term_upper in txt_upper):
-                    results_list.append({
-                        "title": txt[:200], 
-                        "link": full_link,
-                        "type": "Mevzuat" if link_tag else "Metin"
-                    })
+                if (search_form and search_input) or (search_term.replace('i','İ').upper() in txt.replace('i','İ').upper()):
+                    results_list.append({"title": txt[:200], "link": full_link, "type": "Mevzuat" if link_tag else "Metin"})
 
-        # Eğer yukarıdaki yöntemle hiç sonuç çıkmadıysa, sayfadaki TÜM linklere bak (Fallback)
+        # Fallback: Tüm linkler
         if not results_list:
-            links = soup.find_all("a")
-            for link in links:
+            for link in soup.find_all("a"):
                 txt = link.get_text(strip=True)
                 href = link.get('href')
-                if txt and href:
-                    txt_upper = txt.replace('i','İ').upper()
-                    term_upper = search_term.replace('i','İ').upper()
-                    
-                    if term_upper in txt_upper:
-                        full_link = urllib.parse.urljoin(base_url, href)
-                        results_list.append({"title": txt, "link": full_link, "type": "Link"})
+                if txt and href and search_term.replace('i','İ').upper() in txt.replace('i','İ').upper():
+                    results_list.append({"title": txt, "link": urllib.parse.urljoin(base_url, href), "type": "Link"})
 
         return results_list, "Başarılı"
 
@@ -2986,12 +2907,14 @@ def render_circular_cross_check_module(api_key):
     st.header("📜 Mevzuat & Genelge Entegre Analiz Sistemi")
     st.info("Tarım ve Orman Bakanlığı mevzuat hiyerarşisine göre belge denetimi, dosya analizi ve web taraması yapar.")
 
+    # !!! ÖNEMLİ: BURADA 6 TANE BAŞLIK OLDUĞUNDAN EMİN OLUN !!!
     tabs = st.tabs([
         "👮 Belge/Dosya Denetimi", 
         "💬 Mevzuat Soru-Cevap", 
         "🌐 Google Resmi Tarama", 
         "⚡ KAYSİS Akıllı Arama", 
-        "🔄 Eski vs Yeni (Diff)"
+        "🔄 Eski vs Yeni (Diff)",
+        "📢 Resmi Gazete & Bildirim" # 6. Sekme
     ])
 
     # ==========================================
@@ -3056,7 +2979,7 @@ def render_circular_cross_check_module(api_key):
             st.markdown(f"<a href='{full_url}' target='_blank'><button style='background-color:#1976d2; color:white; padding:10px; width:100%; border:none; border-radius:5px;'>👉 SONUÇLARI GÖRMEK İÇİN TIKLAYIN</button></a>", unsafe_allow_html=True)
 
     # ==========================================
-    # 4. SEKME: KAYSİS AKILLI ARAMA (YENİ ENTEGRASYON)
+    # 4. SEKME: KAYSİS AKILLI ARAMA
     # ==========================================
     with tabs[3]:
         st.subheader("⚡ KAYSİS Akıllı Arama & AI Analizi")
@@ -3068,51 +2991,24 @@ def render_circular_cross_check_module(api_key):
             if not kaysis_term:
                 st.warning("Lütfen aranacak kelime girin.")
             else:
-                with st.spinner("KAYSİS taranıyor (Form tespiti ve sorgulama)..."):
+                with st.spinner("KAYSİS taranıyor..."):
                     results, status = fetch_kaysis_smart_search(kaysis_term)
                     
                     if results:
                         st.success(f"✅ {len(results)} adet belge bulundu.")
-                        
-                        # 1. Sonuçları Listele
-                        st.markdown("### 📄 Bulunan Belgeler")
                         results_text_for_ai = ""
-                        
                         for i, res in enumerate(results):
-                            # Link varsa tıklanabilir yap, yoksa sadece metni göster
-                            if res['link']:
-                                link_html = f"<a href='{res['link']}' target='_blank'>🔗 {res['title']}</a>"
-                            else:
-                                link_html = f"{res['title']} (Link Bulunamadı)"
-                                
+                            link_html = f"<a href='{res['link']}' target='_blank'>🔗 {res['title']}</a>" if res['link'] else res['title']
                             st.markdown(f"{i+1}. {link_html}", unsafe_allow_html=True)
                             results_text_for_ai += f"- ID: {i+1}, Başlık: {res['title']}, Link: {res['link']}\n"
                         
-                        # 2. AI Analizi
                         st.divider()
                         st.subheader("🤖 Yapay Zeka Analizi")
-                        with st.spinner("Yapay Zeka sonuçları analiz ediyor..."):
-                            ai_prompt = f"""
-                            GÖREV: Bir hukuk asistanısın. Kullanıcı '{kaysis_term}' hakkında arama yaptı.
-                            Aşağıda KAYSİS (Devlet Mevzuat Sistemi) üzerinde bulunan sonuçlar var.
-                            
-                            BULUNAN SONUÇLAR:
-                            {results_text_for_ai}
-                            
-                            İSTEK:
-                            1. Kullanıcının aradığına EN UYGUN olan belge hangisi? (ID ve Başlık belirt)
-                            2. Neden bu belgenin doğru olduğunu düşünüyorsun?
-                            3. Eğer aranan şey tam olarak yoksa, en yakın alternatifi öner.
-                            4. Cevabı kısa, net ve Türkçe ver.
-                            """
-                            
-                            ai_analysis = get_ai_response(ai_prompt, api_key)
-                            st.info(ai_analysis)
+                        with st.spinner("Analiz ediliyor..."):
+                            ai_prompt = f"GÖREV: Hukuk asistanı. Soru: '{kaysis_term}'. Sonuçlar:\n{results_text_for_ai}\nEn uygun belge hangisi ve neden? Kısa cevap ver."
+                            st.info(get_ai_response(ai_prompt, api_key))
                     else:
                         st.warning("⚠️ Sonuç bulunamadı.")
-                        st.error(f"Sistem Mesajı: {status}")
-                        
-                        # Yedek Plan: Google
                         g_url = f"https://www.google.com/search?q={urllib.parse.quote('site:kms.kaysis.gov.tr ' + kaysis_term)}"
                         st.markdown(f"<a href='{g_url}' target='_blank'>👉 Google Üzerinden Aramayı Dene</a>", unsafe_allow_html=True)
 
@@ -3130,87 +3026,63 @@ def render_circular_cross_check_module(api_key):
             html = html.replace('table.diff {font-family:Courier; border:medium;}', 'table.diff {font-family:sans-serif; width:100%; border:1px solid #ddd;}')
             st.components.v1.html(html, height=400, scrolling=True)
 
-        # ==========================================
-        # 6. SEKME: RESMİ GAZETE & WHATSAPP BİLDİRİM
-        # ==========================================
-        with tabs[5]:
-            st.subheader("📢 Resmi Gazete Canlı Takip & Bildirim")
-            st.caption("Resmi Gazete RSS akışını tarar, 'Kanun/Yönetmelik/Tebliğ' içerenleri bulur ve AI ile özetleyip WhatsApp'a hazırlar.")
-            
-            target_phone = "905427880956" # Sizin numaranız
-            
-            if st.button("📰 Güncel Resmi Gazete'yi Tara"):
-                with st.spinner("Resmi Gazete taranıyor ve analiz ediliyor..."):
-                    try:
-                        # 1. RSS Verisini Çek
-                        rss_url = "https://www.resmigazete.gov.tr/rss/eskiler.xml"
-                        feed = feedparser.parse(rss_url)
+    # ==========================================
+    # 6. SEKME: RESMİ GAZETE & WHATSAPP
+    # ==========================================
+    with tabs[5]:
+        st.subheader("📢 Resmi Gazete Canlı Takip & Bildirim")
+        st.caption("Resmi Gazete RSS akışını tarar, 'Kanun/Yönetmelik/Tebliğ' içerenleri bulur ve AI ile özetleyip WhatsApp'a hazırlar.")
+        
+        target_phone = "905427880956"
+        
+        if st.button("📰 Güncel Resmi Gazete'yi Tara"):
+            with st.spinner("Resmi Gazete taranıyor ve analiz ediliyor..."):
+                try:
+                    rss_url = "https://www.resmigazete.gov.tr/rss/eskiler.xml"
+                    feed = feedparser.parse(rss_url)
+                    
+                    found_entries = []
+                    keywords = ["kanun", "yönetmelik", "tebliğ", "karar"]
+                    
+                    for entry in feed.entries:
+                        if any(k in entry.title.lower() for k in keywords):
+                            found_entries.append(entry)
+                    
+                    if not found_entries:
+                        st.info("Bugün yayınlanan akışta önemli bir mevzuat değişikliği bulunamadı.")
+                    else:
+                        st.success(f"✅ {len(found_entries)} adet önemli değişiklik tespit edildi!")
                         
-                        found_entries = []
-                        keywords = ["kanun", "yönetmelik", "tebliğ", "karar"]
-                        
-                        # 2. Filtreleme
-                        for entry in feed.entries:
-                            title = entry.title.lower()
-                            if any(k in title for k in keywords):
-                                found_entries.append(entry)
-                        
-                        if not found_entries:
-                            st.info("Bugün yayınlanan akışta önemli bir mevzuat değişikliği (Kanun/Yönetmelik/Tebliğ) bulunamadı.")
-                        else:
-                            st.success(f"✅ {len(found_entries)} adet önemli değişiklik tespit edildi!")
-                            
-                            # Her bir kayıt için işlem yap
-                            for i, entry in enumerate(found_entries):
-                                with st.expander(f"📄 {entry.title}", expanded=True):
-                                    st.write(f"**Tarih:** {entry.published}")
-                                    st.write(f"**Link:** {entry.link}")
-                                    
-                                    # 3. AI ile Özetleme
-                                    summary_prompt = f"""
-                                    GÖREV: Resmi Gazete'de yayınlanan şu başlığı ve içeriği analiz et.
-                                    BAŞLIK: {entry.title}
-                                    LİNK: {entry.link}
-                                    
-                                    İSTEK:
-                                    1. Bu değişikliğin ne olduğunu 1 cümle ile özetle.
-                                    2. Tarım/Gıda sektörüyle ilgisi var mı? Varsa belirt.
-                                    3. WhatsApp mesajı formatında kısa bir metin hazırla.
-                                    """
-                                    
-                                    # AI Yanıtı (Hata yönetimi ile)
-                                    ai_summary = "AI Özeti hazırlanamadı."
-                                    try:
-                                        ai_summary = get_ai_response(summary_prompt, api_key)
-                                        st.info(ai_summary)
-                                    except:
-                                        st.warning("AI modülü yanıt vermedi, ham metin gönderilecek.")
-                                        ai_summary = f"YENİ MEVZUAT:\n{entry.title}\nLink: {entry.link}"
+                        for i, entry in enumerate(found_entries):
+                            with st.expander(f"📄 {entry.title}", expanded=True):
+                                st.write(f"**Tarih:** {entry.published}")
+                                st.write(f"**Link:** {entry.link}")
+                                
+                                # AI ile Özetleme
+                                summary_prompt = f"Resmi Gazete Başlığı: {entry.title}. Link: {entry.link}. Bunu 1 cümlede özetle ve WhatsApp için kısa bir mesaj taslağı oluştur."
+                                
+                                try:
+                                    ai_summary = get_ai_response(summary_prompt, api_key)
+                                    st.info(ai_summary)
+                                except:
+                                    ai_summary = f"YENİ MEVZUAT: {entry.title}"
 
-                                    # 4. WhatsApp Linki Oluşturma
-                                    # Mesajı URL uyumlu hale getir
-                                    whatsapp_msg = f"*🔔 RESMİ GAZETE UYARISI*\n\n{ai_summary}\n\n🔗 {entry.link}"
-                                    encoded_msg = urllib.parse.quote(whatsapp_msg)
-                                    
-                                    wa_link = f"https://wa.me/{target_phone}?text={encoded_msg}"
-                                    
-                                    st.markdown(f"""
-                                    <a href="{wa_link}" target="_blank">
-                                        <button style="
-                                            background-color:#25D366; 
-                                            color:white; 
-                                            border:none; 
-                                            padding:10px 20px; 
-                                            border-radius:5px; 
-                                            font-weight:bold; 
-                                            cursor:pointer;">
-                                            📲 WhatsApp ile Bildir ({target_phone})
-                                        </button>
-                                    </a>
-                                    """, unsafe_allow_html=True)
+                                # WhatsApp Linki
+                                whatsapp_msg = f"*🔔 RESMİ GAZETE UYARISI*\n\n{ai_summary}\n\n🔗 {entry.link}"
+                                encoded_msg = urllib.parse.quote(whatsapp_msg)
+                                wa_link = f"https://wa.me/{target_phone}?text={encoded_msg}"
+                                
+                                st.markdown(f"""
+                                <a href="{wa_link}" target="_blank">
+                                    <button style="background-color:#25D366; color:white; border:none; padding:10px 20px; border-radius:5px; font-weight:bold; cursor:pointer;">
+                                        📲 WhatsApp ile Bildir ({target_phone})
+                                    </button>
+                                </a>
+                                """, unsafe_allow_html=True)
 
-                    except Exception as e:
-                        st.error(f"RSS Okuma Hatası: {str(e)}")
+                except Exception as e:
+                    st.error(f"RSS Okuma Hatası: {str(e)}")
+
 
 
 # --- ANA UYGULAMA ---
