@@ -2800,28 +2800,45 @@ def render_circular_cross_check_module(api_key):
         return text
 
     def fetch_kaysis_turbo(url, search_term):
-        """
-        Tarayıcı açmadan (Selenium'suz), doğrudan HTML isteği atarak veriyi çeker.
-        """
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        
         try:
-            # 1. Siteye İstek At
-            response = requests.get(url, headers=headers, verify=False, timeout=10)
-            if response.status_code != 200: return None, f"Siteye erişilemedi. Kod: {response.status_code}"
-            
-            # 2. Tabloları Pandas ile Oku
+            # 1. YÖNTEM: Doğrudan Bağlantı (Önce bunu dener)
+            session = requests.Session()
+            response = session.get(url, headers=headers, verify=False, timeout=5)
+        except:
+            # 2. YÖNTEM (HATA ALIRSA): Proxy Tüneli Kullan (Engel Aşma)
+            # Bu servis, isteği kendi sunucusu üzerinden atar, böylece IP engelini aşabilir.
+            proxy_url = f"https://corsproxy.io/?{url}"
+            try:
+                response = session.get(proxy_url, headers=headers, verify=False, timeout=10)
+            except Exception as e:
+                return None, f"Proxy ile de bağlanılamadı: {str(e)}"
+
+        if response.status_code != 200:
+            return None, f"Sunucu Hatası: {response.status_code}"
+        
+        try:
+            # Tabloları Oku
             dfs = pd.read_html(response.text)
-            if not dfs: return None, "Sayfada tablo bulunamadı."
+            if not dfs: return None, "Tablo bulunamadı."
             
-            df = dfs[0] # İlk tabloyu al
+            df = dfs[0]
             
-            # 3. Python İçinde Filtrele
+            # Türkçe karakter sorununu çözmek için
+            search_term = search_term.replace('i', 'İ').upper() # Basit bir normalizasyon
+            
+            # Filtreleme
             mask = df.apply(lambda x: x.astype(str).str.contains(search_term, case=False, na=False)).any(axis=1)
             filtered_df = df[mask]
             
             return filtered_df, "Başarılı"
+            
         except Exception as e:
-            return None, str(e)
+            return None, f"Veri işleme hatası: {str(e)}"
+
 
     st.header("📜 Mevzuat & Genelge Entegre Analiz Sistemi")
     st.info("Tarım ve Orman Bakanlığı mevzuat hiyerarşisine göre belge denetimi, dosya analizi ve web taraması yapar.")
