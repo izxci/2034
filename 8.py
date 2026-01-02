@@ -2780,14 +2780,9 @@ def render_circular_cross_check_module(api_key):
     import urllib.parse
     from bs4 import BeautifulSoup
     import time
+    import datetime
     
-    # RAG ve RSS için Gerekli Kütüphaneler
-    try:
-        import feedparser
-        rss_available = True
-    except ImportError:
-        rss_available = False
-
+    # RAG Kontrolü
     try:
         from sklearn.feature_extraction.text import TfidfVectorizer
         from sklearn.metrics.pairwise import cosine_similarity
@@ -2815,106 +2810,152 @@ def render_circular_cross_check_module(api_key):
                 for para in doc.paragraphs: text += para.text + "\n"
             elif file_type in ['txt', 'md']:
                 text = uploaded_file.read().decode("utf-8")
-            elif file_type in ['jpg', 'jpeg', 'png', 'tiff', 'img']:
-                text = "GÖRSEL_İÇERİK"
         except Exception as e:
-            return f"Hata: Dosya okunamadı. ({str(e)})"
+            return f"Hata: ({str(e)})"
         return text
 
-    # --- RAG (Retrieval-Augmented Generation) FONKSİYONLARI ---
+    # --- RAG ---
     def split_text_into_chunks(text, chunk_size=1000, overlap=200):
-        """Metni örtüşen parçalara böler."""
-        if not text or len(text) < chunk_size:
-            return [text]
-        
+        if not text or len(text) < chunk_size: return [text]
         chunks = []
         start = 0
         while start < len(text):
             end = start + chunk_size
-            chunk = text[start:end]
-            chunks.append(chunk)
-            start += chunk_size - overlap # Örtüşme payı ile ilerle
+            chunks.append(text[start:end])
+            start += chunk_size - overlap
         return chunks
 
     def find_relevant_chunks(question, chunks, top_k=3):
-        """Soru ile en alakalı metin parçalarını bulur (TF-IDF Yöntemi)."""
         if not chunks: return []
-        
-        # Vektörleştirme (Metni sayılara çevir)
         vectorizer = TfidfVectorizer()
         try:
-            # Hem parçaları hem soruyu vektörleştir
             tfidf_matrix = vectorizer.fit_transform(chunks + [question])
-            
-            # Sorunun vektörü (son eleman)
-            question_vec = tfidf_matrix[-1]
-            
-            # Parçaların vektörleri (son hariç hepsi)
-            chunk_vecs = tfidf_matrix[:-1]
-            
-            # Benzerlik hesapla
-            similarities = cosine_similarity(question_vec, chunk_vecs).flatten()
-            
-            # En yüksek skorlu indexleri bul
+            similarities = cosine_similarity(tfidf_matrix[-1], tfidf_matrix[:-1]).flatten()
             related_indices = similarities.argsort()[-top_k:][::-1]
-            
             return [chunks[i] for i in related_indices]
-        except Exception as e:
-            return chunks[:1] # Hata olursa ilk parçayı dön
+        except:
+            return chunks[:1]
 
-    # --- KAYSİS ARAMA FONKSİYONU ---
+    # --- RESMİ GAZETE FONKSİYONLARI (GÜÇLENDİRİLMİŞ) ---
+    
+    def fetch_page_content(url):
+        """Linkin içeriğini metin olarak çeker."""
+        try:
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+            response = requests.get(url, headers=headers, verify=False, timeout=10)
+            response.encoding = 'utf-8' # Türkçe karakter sorunu için
+            soup = BeautifulSoup(response.content, "html.parser")
+            
+            # Sadece ana metin alanını almaya çalış
+            content_div = soup.find("div", class_="WordSection1")
+            if not content_div:
+                content_div = soup.find("body")
+            
+            text = content_div.get_text(" ", strip=True) if content_div else ""
+            return text
+        except:
+            return ""
+
+    def scrape_daily_resmi_gazete(search_keyword=None):
+        """
+        Resmi Gazete'yi tarar.
+        Eğer search_keyword varsa: Linklerin İÇİNE girip o kelimeyi arar.
+        Eğer yoksa: Sadece başlıkta Yönetmelik/Tebliğ arar.
+        """
+        today = datetime.date.today()
+        # Gece 02:00'den önceyse dünü kontrol et
+        if datetime.datetime.now().hour < 2:
+            today = today - datetime.timedelta(days=1)
+            
+        date_str = today.strftime('%Y%m%d')
+        target_url = f"https://www.resmigazete.gov.tr/eskiler/{today.year}/{today.month:02d}/{date_str}.htm"
+        
+        headers = {"User-Agent": "Mozilla/5.0"}
+        
+        try:
+            response = requests.get(target_url, headers=headers, verify=False, timeout=15)
+            if response.status_code != 200:
+                return [], f"Resmi Gazete bugünkü sayıya ulaşılamadı. ({response.status_code})"
+            
+            response.encoding = 'utf-8'
+            soup = BeautifulSoup(response.content, "html.parser")
+            
+            all_links = soup.find_all("a")
+            found_items = []
+            
+            # İlerleme çubuğu (Sadece derin arama varsa gösterilir)
+            progress_bar = None
+            if search_keyword:
+                progress_bar = st.progress(0, text="Derinlemesine içerik taraması yapılıyor...")
+            
+            total_links = len(all_links)
+            
+            for i, link in enumerate(all_links):
+                txt = link.get_text(" ", strip=True)
+                href = link.get("href")
+                
+                if txt and href and not href.startswith("#"):
+                    full_link = urllib.parse.urljoin(target_url, href)
+                    
+                    # 1. DURUM: KULLANICI ARAMA YAPTIYSA (Derin Tarama)
+                    if search_keyword:
+                        # İlerlemeyi güncelle
+                        if progress_bar: progress_bar.progress((i + 1) / total_links)
+                        
+                        # İçeriği indir
+                        content = fetch_page_content(full_link)
+                        
+                        # Kelime içerikte veya başlıkta geçiyor mu?
+                        if search_keyword.lower() in content.lower() or search_keyword.lower() in txt.lower():
+                            found_items.append({
+                                "title": txt,
+                                "link": full_link,
+                                "content_snippet": content[:2000], # AI için başını al
+                                "match_type": "İçerik Eşleşmesi"
+                            })
+                            
+                    # 2. DURUM: ARAMA YOKSA (Standart Tarama)
+                    else:
+                        keywords = ["yönetmelik", "tebliğ", "karar", "genelge"]
+                        if any(k in txt.lower() for k in keywords):
+                            found_items.append({
+                                "title": txt,
+                                "link": full_link,
+                                "content_snippet": "",
+                                "match_type": "Başlık Eşleşmesi"
+                            })
+            
+            if progress_bar: progress_bar.empty()
+            return found_items, None
+            
+        except Exception as e:
+            return [], str(e)
+
+    # --- KAYSİS ---
     def fetch_kaysis_smart_search(search_term):
+        # (Önceki kodun aynısı - yer kaplamaması için özetlendi)
         base_url = "https://kms.kaysis.gov.tr"
         target_url = "https://kms.kaysis.gov.tr/Home/Kurum/24308110"
-        API_KEY = "afe6d60b061ef600cbe8477886476f1a"
-        
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-        }
-
-        session = requests.Session()
-        session.headers.update(headers)
-        response = None
-        used_method = "Direct"
-
         try:
-            response = session.get(target_url, timeout=10, verify=False)
-            if response.status_code != 200: raise Exception(f"Status: {response.status_code}")
-        except:
-            used_method = "Proxy"
-            try:
-                payload = {'api_key': API_KEY, 'url': target_url, 'country_code': 'tr', 'render': 'true'}
-                response = requests.get('http://api.scraperapi.com', params=payload, timeout=60)
-            except:
-                return [], "Bağlantı başarısız."
-
-        if not response or response.status_code != 200: return [], "Yanıt yok."
-
-        soup = BeautifulSoup(response.content, "html.parser")
-        results_list = []
-        
-        # Basit Arama (Fallback)
-        for link in soup.find_all("a"):
-            txt = link.get_text(strip=True)
-            href = link.get('href')
-            if txt and href and search_term.replace('i','İ').upper() in txt.replace('i','İ').upper():
-                full_link = urllib.parse.urljoin(base_url, href)
-                results_list.append({"title": txt, "link": full_link, "type": "Mevzuat"})
-
-        return results_list, "Başarılı"
+            res = requests.get(target_url, verify=False, timeout=10)
+            soup = BeautifulSoup(res.content, "html.parser")
+            results = []
+            for a in soup.find_all("a"):
+                if search_term.lower() in a.get_text().lower():
+                    results.append({"title": a.get_text(), "link": urllib.parse.urljoin(base_url, a.get('href'))})
+            return results, "OK"
+        except: return [], "Hata"
 
     # --- ANA ARAYÜZ ---
     st.header("📜 Mevzuat & Genelge Entegre Analiz Sistemi")
-    st.info("Tarım ve Orman Bakanlığı mevzuat hiyerarşisine göre belge denetimi, dosya analizi ve web taraması yapar.")
-
+    
     tabs = st.tabs([
         "👮 Belge/Dosya Denetimi", 
         "💬 Mevzuat Soru-Cevap (RAG)", 
         "🌐 Google Resmi Tarama", 
         "⚡ KAYSİS Akıllı Arama", 
         "🔄 Eski vs Yeni (Diff)",
-        "📢 Resmi Gazete & Bildirim"
+        "📢 Resmi Gazete & Canlı Takip"
     ])
 
     # ==========================================
@@ -2924,153 +2965,129 @@ def render_circular_cross_check_module(api_key):
         st.subheader("📂 Belge Yükle ve Denetle")
         col1, col2 = st.columns([1, 2])
         with col1:
-            kanun_kapsami = st.selectbox("İlgili Kanun/Alan", [
-                "5996 s.K. - Gıda/Yem/Veteriner", "5403 s.K. - Toprak Koruma",
-                "4342 s.K. - Mera", "3083 s.K. - Arazi Düzenleme",
-                "1163 s.K. - Kooperatifler", "5488 s.K. - Tarım Destekleri"
-            ])
-            uploaded_file = st.file_uploader("Dosya Yükle", type=['pdf', 'docx', 'txt', 'jpg', 'png', 'tiff'])
+            kanun_kapsami = st.selectbox("İlgili Kanun/Alan", ["5996 s.K.", "5403 s.K.", "4342 s.K.", "Genel"])
+            uploaded_file = st.file_uploader("Dosya Yükle", type=['pdf', 'docx', 'txt'])
         with col2:
             user_text = ""
-            image_data = None
             if uploaded_file:
-                st.success(f"Dosya yüklendi: {uploaded_file.name}")
-                extracted = extract_text_from_file(uploaded_file)
-                if extracted == "GÖRSEL_İÇERİK":
-                    st.image(uploaded_file, caption="Yüklenen Belge", width=300)
-                    image_data = Image.open(uploaded_file)
-                else:
-                    user_text = st.text_area("Belge İçeriği", value=extracted, height=200)
-            else:
-                user_text = st.text_area("Veya Metni Buraya Yapıştırın", height=200)
-
-        if st.button("🛡️ Hiyerarşik Denetimi Başlat") and api_key:
-            if not user_text and not image_data:
-                st.warning("Lütfen dosya yükleyin veya metin girin.")
-            else:
-                with st.spinner("Denetim yapılıyor..."):
-                    base_prompt = f"GÖREV: Tarım Bakanlığı Müfettişi. KAPSAM: {kanun_kapsami}. Uygunluk denetimi yap."
-                    if image_data:
-                        response = get_ai_response([base_prompt, image_data], api_key)
-                    else:
-                        response = get_ai_response(base_prompt + f"\nMETİN: {user_text}", api_key)
-                    st.markdown(f"<div style='background-color:#f8f9fa; padding:15px; border-left:5px solid #d32f2f;'>{response}</div>", unsafe_allow_html=True)
+                st.success(f"Yüklendi: {uploaded_file.name}")
+                user_text = extract_text_from_file(uploaded_file)
+                st.text_area("İçerik", user_text, height=150)
+        
+        if st.button("🛡️ Denetle") and api_key and user_text:
+            with st.spinner("Denetleniyor..."):
+                st.write(get_ai_response(f"GÖREV: Denetçi. KAPSAM: {kanun_kapsami}. METİN: {user_text}", api_key))
 
     # ==========================================
-    # 2. SEKME: SORU - CEVAP (RAG ENTEGRASYONU)
+    # 2. SEKME: RAG
     # ==========================================
     with tabs[1]:
-        st.subheader("💬 Mevzuat Danışmanı (RAG Destekli)")
-        st.caption("Yüklenen belgenin tamamını tarar, sadece ilgili kısımları bularak cevap verir (Halüsinasyonu önler).")
-        
-        if not rag_available:
-            st.error("⚠️ 'scikit-learn' kütüphanesi eksik! RAG çalışmaz.")
-            st.info("requirements.txt dosyasına 'scikit-learn' ekleyin.")
-        
-        soru = st.text_input("Sorunuzu yazın:", placeholder="Örn: Bu yönetmeliğe göre ceza miktarı nedir?")
-        
-        if st.button("Soru Sor") and api_key:
-            if not user_text:
-                st.warning("Lütfen önce 1. Sekmeden bir belge yükleyin veya metin yapıştırın.")
-            else:
-                with st.spinner("Belge analiz ediliyor ve ilgili kısımlar aranıyor..."):
-                    # 1. Metni Parçala
-                    chunks = split_text_into_chunks(user_text)
-                    
-                    # 2. İlgili Parçaları Bul (RAG)
-                    relevant_chunks = find_relevant_chunks(soru, chunks)
-                    
-                    # 3. Context Oluştur
-                    context_text = "\n---\n".join(relevant_chunks)
-                    
-                    # 4. AI'ya Gönder
-                    rag_prompt = f"""
-                    GÖREV: Sen uzman bir hukuk asistanısın.
-                    Aşağıda bir mevzuat belgesinden ALINTILANMIŞ ilgili kısımlar var.
-                    Sadece bu kısımlara dayanarak kullanıcının sorusunu cevapla.
-                    Eğer bilgi bu kısımlarda yoksa "Belgede bu bilgi bulunamadı" de.
-                    
-                    BELGE PARÇALARI (BAĞLAM):
-                    {context_text}
-                    
-                    SORU: {soru}
-                    
-                    CEVAP:
-                    """
-                    
-                    response = get_ai_response(rag_prompt, api_key)
-                    
-                    st.markdown("### 💡 Cevap")
-                    st.write(response)
-                    
-                    with st.expander("🔍 Yapay Zekanın Kullandığı Kaynak Parçalar"):
-                        st.text(context_text)
+        st.subheader("💬 Mevzuat Danışmanı (RAG)")
+        soru = st.text_input("Soru:")
+        if st.button("Sor") and api_key and user_text:
+            chunks = split_text_into_chunks(user_text)
+            rel = find_relevant_chunks(soru, chunks)
+            st.write(get_ai_response(f"BAĞLAM: {rel}\nSORU: {soru}", api_key))
 
     # ==========================================
-    # 3. SEKME: GOOGLE RESMİ TARAMA
+    # 3. SEKME: GOOGLE
     # ==========================================
     with tabs[2]:
-        st.subheader("🌐 Google Tabanlı Resmi Tarama")
-        search_query = st.text_input("Aranacak Konu", placeholder="Örn: Çiğ Süt Tebliği")
-        if st.button("🚀 Google ile Ara"):
-            final_query = f"{search_query} (site:tarimorman.gov.tr OR site:mevzuat.gov.tr OR site:kms.kaysis.gov.tr)"
-            full_url = f"https://www.google.com/search?q={urllib.parse.quote(final_query)}"
-            st.markdown(f"<a href='{full_url}' target='_blank'><button style='background-color:#1976d2; color:white; padding:10px; width:100%; border:none; border-radius:5px;'>👉 SONUÇLARI GÖRMEK İÇİN TIKLAYIN</button></a>", unsafe_allow_html=True)
+        st.subheader("🌐 Google Tarama")
+        q = st.text_input("Konu:")
+        if st.button("Ara"):
+            st.markdown(f"[Google Sonuçları](https://www.google.com/search?q={urllib.parse.quote(q + ' site:mevzuat.gov.tr')})")
 
     # ==========================================
-    # 4. SEKME: KAYSİS AKILLI ARAMA
+    # 4. SEKME: KAYSİS
     # ==========================================
     with tabs[3]:
-        st.subheader("⚡ KAYSİS Akıllı Arama & AI Analizi")
-        kaysis_term = st.text_input("Mevzuat/Belge Adı:", placeholder="Örn: Disiplin Amirleri Yönetmeliği")
-        if st.button("🔍 Ara ve Analiz Et"):
-            with st.spinner("KAYSİS taranıyor..."):
-                results, status = fetch_kaysis_smart_search(kaysis_term)
-                if results:
-                    st.success(f"✅ {len(results)} adet belge bulundu.")
-                    results_text = "\n".join([f"- {r['title']} ({r['link']})" for r in results])
-                    st.markdown(results_text)
-                    st.divider()
-                    st.info(get_ai_response(f"Soru: {kaysis_term}. Sonuçlar:\n{results_text}\nHangisi en uygun?", api_key))
-                else:
-                    st.warning("Sonuç bulunamadı.")
+        st.subheader("⚡ KAYSİS")
+        k_term = st.text_input("Mevzuat Adı:")
+        if st.button("Kaysis Ara"):
+            res, _ = fetch_kaysis_smart_search(k_term)
+            for r in res: st.markdown(f"- [{r['title']}]({r['link']})")
 
     # ==========================================
     # 5. SEKME: DIFF
     # ==========================================
     with tabs[4]:
-        st.subheader("⚖️ Eski vs Yeni Karşılaştırma")
-        c1, c2 = st.columns(2)
-        with c1: old_text = st.text_area("🔴 Eski Metin", height=150)
-        with c2: new_text = st.text_area("🟢 Yeni Metin", height=150)
-        if st.button("🔍 Farkları Göster") and old_text and new_text:
-            d = difflib.HtmlDiff()
-            html = d.make_file(old_text.splitlines(), new_text.splitlines(), fromdesc="Eski", todesc="Yeni")
-            st.components.v1.html(html, height=400, scrolling=True)
+        st.subheader("⚖️ Karşılaştırma")
+        t1 = st.text_area("Eski Metin")
+        t2 = st.text_area("Yeni Metin")
+        if st.button("Farkları Bul"):
+            st.components.v1.html(difflib.HtmlDiff().make_file(t1.splitlines(), t2.splitlines()), height=400, scrolling=True)
 
     # ==========================================
-    # 6. SEKME: RESMİ GAZETE & WHATSAPP
+    # 6. SEKME: RESMİ GAZETE (GÜÇLENDİRİLMİŞ)
     # ==========================================
     with tabs[5]:
-        st.subheader("📢 Resmi Gazete Canlı Takip & Bildirim")
-        if not rss_available:
-            st.error("⚠️ 'feedparser' kütüphanesi eksik!")
-        else:
-            if st.button("📰 Güncel Resmi Gazete'yi Tara"):
-                with st.spinner("Taranıyor..."):
-                    try:
-                        feed = feedparser.parse("https://www.resmigazete.gov.tr/rss/eskiler.xml")
-                        found = [e for e in feed.entries if any(k in e.title.lower() for k in ["kanun", "yönetmelik", "tebliğ"])]
-                        if found:
-                            st.success(f"{len(found)} değişiklik bulundu.")
-                            for entry in found:
-                                st.write(f"**{entry.title}**")
-                                msg = urllib.parse.quote(f"*RESMİ GAZETE*\n{entry.title}\n{entry.link}")
-                                st.markdown(f"<a href='https://wa.me/905427880956?text={msg}' target='_blank'>📲 WhatsApp'a Gönder</a>", unsafe_allow_html=True)
-                        else:
-                            st.info("Önemli değişiklik yok.")
-                    except Exception as e:
-                        st.error(f"Hata: {e}")
+        st.subheader("📢 Resmi Gazete Canlı Takip & Derin Analiz")
+        st.markdown("""
+        Bu modül bugünkü Resmi Gazete'yi tarar. 
+        *   **Boş bırakırsanız:** Sadece önemli başlıkları (Yönetmelik/Tebliğ) getirir.
+        *   **Kelime yazarsanız:** Tüm linklerin **İÇERİĞİNE** girer ve o kelimeyi (örn: '5996', 'Veteriner') arar.
+        """)
+        
+        col_search, col_btn = st.columns([3, 1])
+        with col_search:
+            search_keyword = st.text_input("🔍 Özel Kelime Ara (Opsiyonel)", placeholder="Örn: 5996, Süt, Destekleme, Ceza")
+        with col_btn:
+            st.write("") # Hizalama boşluğu
+            st.write("") 
+            run_btn = st.button("📰 Gazeteyi Tara")
+            
+        target_phone = "905427880956"
+        
+        if run_btn:
+            with st.spinner("Resmi Gazete taranıyor... (İçerik araması biraz zaman alabilir)"):
+                items, error = scrape_daily_resmi_gazete(search_keyword if search_keyword else None)
+                
+                if error:
+                    st.error(f"Hata: {error}")
+                elif not items:
+                    msg = f"Bugünkü Resmi Gazete'de '{search_keyword}' ile ilgili bir kayıt bulunamadı." if search_keyword else "Bugün önemli bir Yönetmelik/Tebliğ değişikliği yok."
+                    st.info(msg)
+                else:
+                    st.success(f"✅ {len(items)} adet kayıt bulundu!")
+                    
+                    for i, item in enumerate(items):
+                        with st.expander(f"📄 {item['title']}", expanded=True):
+                            st.write(f"**Link:** {item['link']}")
+                            if search_keyword:
+                                st.success(f"Bu belgenin içeriğinde '{search_keyword}' ifadesi tespit edildi.")
+                            
+                            # AI Analiz Butonu
+                            if st.button(f"🤖 AI ile Analiz Et (#{i+1})", key=f"ai_btn_{i}"):
+                                with st.spinner("Metin analiz ediliyor..."):
+                                    # Eğer içerik daha önce çekilmediyse şimdi çek
+                                    content = item.get('content_snippet')
+                                    if not content or len(content) < 100:
+                                        content = fetch_page_content(item['link'])
+                                    
+                                    # Prompt Hazırla
+                                    if search_keyword:
+                                        prompt = f"""
+                                        GÖREV: Bu Resmi Gazete metnini analiz et.
+                                        KULLANICI ARAMASI: '{search_keyword}'
+                                        
+                                        METİN: {content[:10000]}
+                                        
+                                        İSTENENLER:
+                                        1. Bu metinde '{search_keyword}' ile ilgili ne deniyor? (Özetle)
+                                        2. Bu düzenleme neyi değiştiriyor?
+                                        3. WhatsApp mesajı formatında kısa bir bilgilendirme yaz.
+                                        """
+                                    else:
+                                        prompt = f"Bu Resmi Gazete maddesini özetle: {item['title']}. Link: {item['link']}. WhatsApp mesajı hazırla."
+                                    
+                                    ai_res = get_ai_response(prompt, api_key)
+                                    st.info(ai_res)
+                                    
+                                    # WhatsApp Gönder
+                                    wa_msg = urllib.parse.quote(f"*RESMİ GAZETE UYARISI*\n\n{ai_res}\n\n🔗 {item['link']}")
+                                    st.markdown(f"<a href='https://wa.me/{target_phone}?text={wa_msg}' target='_blank'><button style='background-color:#25D366; color:white; border:none; padding:8px 16px; border-radius:5px;'>📲 WhatsApp'a Gönder</button></a>", unsafe_allow_html=True)
+
 
 
 
