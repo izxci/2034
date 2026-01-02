@@ -2781,12 +2781,19 @@ def render_circular_cross_check_module(api_key):
     from bs4 import BeautifulSoup
     import time
     
-    # RSS Kütüphanesi Kontrolü (Hata vermemesi için try-except)
+    # RAG ve RSS için Gerekli Kütüphaneler
     try:
         import feedparser
         rss_available = True
     except ImportError:
         rss_available = False
+
+    try:
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.metrics.pairwise import cosine_similarity
+        rag_available = True
+    except ImportError:
+        rag_available = False
     
     # SSL Hatalarını Yoksay
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -2814,8 +2821,49 @@ def render_circular_cross_check_module(api_key):
             return f"Hata: Dosya okunamadı. ({str(e)})"
         return text
 
+    # --- RAG (Retrieval-Augmented Generation) FONKSİYONLARI ---
+    def split_text_into_chunks(text, chunk_size=1000, overlap=200):
+        """Metni örtüşen parçalara böler."""
+        if not text or len(text) < chunk_size:
+            return [text]
+        
+        chunks = []
+        start = 0
+        while start < len(text):
+            end = start + chunk_size
+            chunk = text[start:end]
+            chunks.append(chunk)
+            start += chunk_size - overlap # Örtüşme payı ile ilerle
+        return chunks
+
+    def find_relevant_chunks(question, chunks, top_k=3):
+        """Soru ile en alakalı metin parçalarını bulur (TF-IDF Yöntemi)."""
+        if not chunks: return []
+        
+        # Vektörleştirme (Metni sayılara çevir)
+        vectorizer = TfidfVectorizer()
+        try:
+            # Hem parçaları hem soruyu vektörleştir
+            tfidf_matrix = vectorizer.fit_transform(chunks + [question])
+            
+            # Sorunun vektörü (son eleman)
+            question_vec = tfidf_matrix[-1]
+            
+            # Parçaların vektörleri (son hariç hepsi)
+            chunk_vecs = tfidf_matrix[:-1]
+            
+            # Benzerlik hesapla
+            similarities = cosine_similarity(question_vec, chunk_vecs).flatten()
+            
+            # En yüksek skorlu indexleri bul
+            related_indices = similarities.argsort()[-top_k:][::-1]
+            
+            return [chunks[i] for i in related_indices]
+        except Exception as e:
+            return chunks[:1] # Hata olursa ilk parçayı dön
+
+    # --- KAYSİS ARAMA FONKSİYONU ---
     def fetch_kaysis_smart_search(search_term):
-        """KAYSİS Arama Fonksiyonu"""
         base_url = "https://kms.kaysis.gov.tr"
         target_url = "https://kms.kaysis.gov.tr/Home/Kurum/24308110"
         API_KEY = "afe6d60b061ef600cbe8477886476f1a"
@@ -2823,20 +2871,17 @@ def render_circular_cross_check_module(api_key):
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-            "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
         }
 
         session = requests.Session()
         session.headers.update(headers)
-        
         response = None
         used_method = "Direct"
 
-        # 1. ADIM: SAYFAYI GETİR
         try:
             response = session.get(target_url, timeout=10, verify=False)
             if response.status_code != 200: raise Exception(f"Status: {response.status_code}")
-        except Exception as e:
+        except:
             used_method = "Proxy"
             try:
                 payload = {'api_key': API_KEY, 'url': target_url, 'country_code': 'tr', 'render': 'true'}
@@ -2846,62 +2891,16 @@ def render_circular_cross_check_module(api_key):
 
         if not response or response.status_code != 200: return [], "Yanıt yok."
 
-        # 2. ADIM: ARAMA FORMUNU BUL VE GÖNDER
         soup = BeautifulSoup(response.content, "html.parser")
         results_list = []
-        search_form, search_input = None, None
         
-        for form in soup.find_all("form"):
-            inputs = form.find_all("input", type=["text", "search"])
-            for inp in inputs:
-                name = inp.get("name", "").lower()
-                id_val = inp.get("id", "").lower()
-                if any(x in name for x in ['search', 'ara', 'query']) or any(x in id_val for x in ['search', 'ara']):
-                    search_input = inp
-                    search_form = form
-                    break
-            if search_form: break
-            
-        if search_form and search_input:
-            try:
-                form_data = {inp.get("name"): inp.get("value", "") for inp in search_form.find_all("input") if inp.get("name")}
-                form_data[search_input.get("name")] = search_term
-                action_url = urllib.parse.urljoin(base_url, search_form.get("action", "")) if search_form.get("action") else target_url
-                
-                if used_method == "Proxy":
-                    req = requests.Request('GET', action_url, params=form_data)
-                    payload['url'] = req.prepare().url
-                    search_res = requests.get('http://api.scraperapi.com', params=payload, timeout=60)
-                else:
-                    if search_form.get("method", "get").lower() == "post":
-                        search_res = session.post(action_url, data=form_data, headers=headers, verify=False)
-                    else:
-                        search_res = session.get(action_url, params=form_data, headers=headers, verify=False)
-                
-                if search_res.status_code == 200: soup = BeautifulSoup(search_res.content, "html.parser")
-            except: pass
-
-        # 3. ADIM: SONUÇLARI AYIKLA
-        found_items = soup.find_all(["tr", "div", "li"], class_=lambda x: x and ('result' in x or 'item' in x or 'row' in x))
-        if not found_items: found_items = soup.find_all("tr")
-            
-        for item in found_items:
-            txt = item.get_text(" ", strip=True)
-            link_tag = item.find("a")
-            full_link = urllib.parse.urljoin(base_url, link_tag.get("href")) if link_tag and link_tag.get("href") else None
-            if not txt and link_tag: txt = link_tag.get_text(strip=True)
-                
-            if txt and len(txt) > 5:
-                if (search_form and search_input) or (search_term.replace('i','İ').upper() in txt.replace('i','İ').upper()):
-                    results_list.append({"title": txt[:200], "link": full_link, "type": "Mevzuat" if link_tag else "Metin"})
-
-        # Fallback
-        if not results_list:
-            for link in soup.find_all("a"):
-                txt = link.get_text(strip=True)
-                href = link.get('href')
-                if txt and href and search_term.replace('i','İ').upper() in txt.replace('i','İ').upper():
-                    results_list.append({"title": txt, "link": urllib.parse.urljoin(base_url, href), "type": "Link"})
+        # Basit Arama (Fallback)
+        for link in soup.find_all("a"):
+            txt = link.get_text(strip=True)
+            href = link.get('href')
+            if txt and href and search_term.replace('i','İ').upper() in txt.replace('i','İ').upper():
+                full_link = urllib.parse.urljoin(base_url, href)
+                results_list.append({"title": txt, "link": full_link, "type": "Mevzuat"})
 
         return results_list, "Başarılı"
 
@@ -2911,7 +2910,7 @@ def render_circular_cross_check_module(api_key):
 
     tabs = st.tabs([
         "👮 Belge/Dosya Denetimi", 
-        "💬 Mevzuat Soru-Cevap", 
+        "💬 Mevzuat Soru-Cevap (RAG)", 
         "🌐 Google Resmi Tarama", 
         "⚡ KAYSİS Akıllı Arama", 
         "🔄 Eski vs Yeni (Diff)",
@@ -2958,15 +2957,54 @@ def render_circular_cross_check_module(api_key):
                     st.markdown(f"<div style='background-color:#f8f9fa; padding:15px; border-left:5px solid #d32f2f;'>{response}</div>", unsafe_allow_html=True)
 
     # ==========================================
-    # 2. SEKME: SORU - CEVAP
+    # 2. SEKME: SORU - CEVAP (RAG ENTEGRASYONU)
     # ==========================================
     with tabs[1]:
-        st.subheader("💬 Mevzuat Danışmanı")
-        soru = st.text_input("Sorunuzu yazın:", placeholder="Örn: Destekleme başvurusu ne zaman?")
+        st.subheader("💬 Mevzuat Danışmanı (RAG Destekli)")
+        st.caption("Yüklenen belgenin tamamını tarar, sadece ilgili kısımları bularak cevap verir (Halüsinasyonu önler).")
+        
+        if not rag_available:
+            st.error("⚠️ 'scikit-learn' kütüphanesi eksik! RAG çalışmaz.")
+            st.info("requirements.txt dosyasına 'scikit-learn' ekleyin.")
+        
+        soru = st.text_input("Sorunuzu yazın:", placeholder="Örn: Bu yönetmeliğe göre ceza miktarı nedir?")
+        
         if st.button("Soru Sor") and api_key:
-            context = f"BAĞLAM: {user_text[:2000]}..." if user_text else ""
-            with st.spinner("Cevap hazırlanıyor..."):
-                st.write(get_ai_response(f"{context}\nSORU: {soru}", api_key))
+            if not user_text:
+                st.warning("Lütfen önce 1. Sekmeden bir belge yükleyin veya metin yapıştırın.")
+            else:
+                with st.spinner("Belge analiz ediliyor ve ilgili kısımlar aranıyor..."):
+                    # 1. Metni Parçala
+                    chunks = split_text_into_chunks(user_text)
+                    
+                    # 2. İlgili Parçaları Bul (RAG)
+                    relevant_chunks = find_relevant_chunks(soru, chunks)
+                    
+                    # 3. Context Oluştur
+                    context_text = "\n---\n".join(relevant_chunks)
+                    
+                    # 4. AI'ya Gönder
+                    rag_prompt = f"""
+                    GÖREV: Sen uzman bir hukuk asistanısın.
+                    Aşağıda bir mevzuat belgesinden ALINTILANMIŞ ilgili kısımlar var.
+                    Sadece bu kısımlara dayanarak kullanıcının sorusunu cevapla.
+                    Eğer bilgi bu kısımlarda yoksa "Belgede bu bilgi bulunamadı" de.
+                    
+                    BELGE PARÇALARI (BAĞLAM):
+                    {context_text}
+                    
+                    SORU: {soru}
+                    
+                    CEVAP:
+                    """
+                    
+                    response = get_ai_response(rag_prompt, api_key)
+                    
+                    st.markdown("### 💡 Cevap")
+                    st.write(response)
+                    
+                    with st.expander("🔍 Yapay Zekanın Kullandığı Kaynak Parçalar"):
+                        st.text(context_text)
 
     # ==========================================
     # 3. SEKME: GOOGLE RESMİ TARAMA
@@ -2984,34 +3022,18 @@ def render_circular_cross_check_module(api_key):
     # ==========================================
     with tabs[3]:
         st.subheader("⚡ KAYSİS Akıllı Arama & AI Analizi")
-        st.caption("Site içi arama formunu kullanarak doğrudan veritabanını sorgular.")
-        
         kaysis_term = st.text_input("Mevzuat/Belge Adı:", placeholder="Örn: Disiplin Amirleri Yönetmeliği")
-        
         if st.button("🔍 Ara ve Analiz Et"):
-            if not kaysis_term:
-                st.warning("Lütfen aranacak kelime girin.")
-            else:
-                with st.spinner("KAYSİS taranıyor..."):
-                    results, status = fetch_kaysis_smart_search(kaysis_term)
-                    
-                    if results:
-                        st.success(f"✅ {len(results)} adet belge bulundu.")
-                        results_text_for_ai = ""
-                        for i, res in enumerate(results):
-                            link_html = f"<a href='{res['link']}' target='_blank'>🔗 {res['title']}</a>" if res['link'] else res['title']
-                            st.markdown(f"{i+1}. {link_html}", unsafe_allow_html=True)
-                            results_text_for_ai += f"- ID: {i+1}, Başlık: {res['title']}, Link: {res['link']}\n"
-                        
-                        st.divider()
-                        st.subheader("🤖 Yapay Zeka Analizi")
-                        with st.spinner("Analiz ediliyor..."):
-                            ai_prompt = f"GÖREV: Hukuk asistanı. Soru: '{kaysis_term}'. Sonuçlar:\n{results_text_for_ai}\nEn uygun belge hangisi ve neden? Kısa cevap ver."
-                            st.info(get_ai_response(ai_prompt, api_key))
-                    else:
-                        st.warning("⚠️ Sonuç bulunamadı.")
-                        g_url = f"https://www.google.com/search?q={urllib.parse.quote('site:kms.kaysis.gov.tr ' + kaysis_term)}"
-                        st.markdown(f"<a href='{g_url}' target='_blank'>👉 Google Üzerinden Aramayı Dene</a>", unsafe_allow_html=True)
+            with st.spinner("KAYSİS taranıyor..."):
+                results, status = fetch_kaysis_smart_search(kaysis_term)
+                if results:
+                    st.success(f"✅ {len(results)} adet belge bulundu.")
+                    results_text = "\n".join([f"- {r['title']} ({r['link']})" for r in results])
+                    st.markdown(results_text)
+                    st.divider()
+                    st.info(get_ai_response(f"Soru: {kaysis_term}. Sonuçlar:\n{results_text}\nHangisi en uygun?", api_key))
+                else:
+                    st.warning("Sonuç bulunamadı.")
 
     # ==========================================
     # 5. SEKME: DIFF
@@ -3024,7 +3046,6 @@ def render_circular_cross_check_module(api_key):
         if st.button("🔍 Farkları Göster") and old_text and new_text:
             d = difflib.HtmlDiff()
             html = d.make_file(old_text.splitlines(), new_text.splitlines(), fromdesc="Eski", todesc="Yeni")
-            html = html.replace('table.diff {font-family:Courier; border:medium;}', 'table.diff {font-family:sans-serif; width:100%; border:1px solid #ddd;}')
             st.components.v1.html(html, height=400, scrolling=True)
 
     # ==========================================
@@ -3032,61 +3053,25 @@ def render_circular_cross_check_module(api_key):
     # ==========================================
     with tabs[5]:
         st.subheader("📢 Resmi Gazete Canlı Takip & Bildirim")
-        
         if not rss_available:
             st.error("⚠️ 'feedparser' kütüphanesi eksik!")
-            st.info("Lütfen 'requirements.txt' dosyasına 'feedparser' satırını ekleyin ve uygulamayı yeniden başlatın.")
         else:
-            st.caption("Resmi Gazete RSS akışını tarar, 'Kanun/Yönetmelik/Tebliğ' içerenleri bulur ve AI ile özetleyip WhatsApp'a hazırlar.")
-            target_phone = "905427880956"
-            
             if st.button("📰 Güncel Resmi Gazete'yi Tara"):
-                with st.spinner("Resmi Gazete taranıyor ve analiz ediliyor..."):
+                with st.spinner("Taranıyor..."):
                     try:
-                        rss_url = "https://www.resmigazete.gov.tr/rss/eskiler.xml"
-                        feed = feedparser.parse(rss_url)
-                        
-                        found_entries = []
-                        keywords = ["kanun", "yönetmelik", "tebliğ", "karar"]
-                        
-                        for entry in feed.entries:
-                            if any(k in entry.title.lower() for k in keywords):
-                                found_entries.append(entry)
-                        
-                        if not found_entries:
-                            st.info("Bugün yayınlanan akışta önemli bir mevzuat değişikliği bulunamadı.")
+                        feed = feedparser.parse("https://www.resmigazete.gov.tr/rss/eskiler.xml")
+                        found = [e for e in feed.entries if any(k in e.title.lower() for k in ["kanun", "yönetmelik", "tebliğ"])]
+                        if found:
+                            st.success(f"{len(found)} değişiklik bulundu.")
+                            for entry in found:
+                                st.write(f"**{entry.title}**")
+                                msg = urllib.parse.quote(f"*RESMİ GAZETE*\n{entry.title}\n{entry.link}")
+                                st.markdown(f"<a href='https://wa.me/905427880956?text={msg}' target='_blank'>📲 WhatsApp'a Gönder</a>", unsafe_allow_html=True)
                         else:
-                            st.success(f"✅ {len(found_entries)} adet önemli değişiklik tespit edildi!")
-                            
-                            for i, entry in enumerate(found_entries):
-                                with st.expander(f"📄 {entry.title}", expanded=True):
-                                    st.write(f"**Tarih:** {entry.published}")
-                                    st.write(f"**Link:** {entry.link}")
-                                    
-                                    # AI ile Özetleme
-                                    summary_prompt = f"Resmi Gazete Başlığı: {entry.title}. Link: {entry.link}. Bunu 1 cümlede özetle ve WhatsApp için kısa bir mesaj taslağı oluştur."
-                                    
-                                    try:
-                                        ai_summary = get_ai_response(summary_prompt, api_key)
-                                        st.info(ai_summary)
-                                    except:
-                                        ai_summary = f"YENİ MEVZUAT: {entry.title}"
-
-                                    # WhatsApp Linki
-                                    whatsapp_msg = f"*🔔 RESMİ GAZETE UYARISI*\n\n{ai_summary}\n\n🔗 {entry.link}"
-                                    encoded_msg = urllib.parse.quote(whatsapp_msg)
-                                    wa_link = f"https://wa.me/{target_phone}?text={encoded_msg}"
-                                    
-                                    st.markdown(f"""
-                                    <a href="{wa_link}" target="_blank">
-                                        <button style="background-color:#25D366; color:white; border:none; padding:10px 20px; border-radius:5px; font-weight:bold; cursor:pointer;">
-                                            📲 WhatsApp ile Bildir ({target_phone})
-                                        </button>
-                                    </a>
-                                    """, unsafe_allow_html=True)
-
+                            st.info("Önemli değişiklik yok.")
                     except Exception as e:
-                        st.error(f"RSS Okuma Hatası: {str(e)}")
+                        st.error(f"Hata: {e}")
+
 
 
 
