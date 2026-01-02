@@ -2836,57 +2836,73 @@ def render_circular_cross_check_module(api_key):
         except:
             return chunks[:1]
 
-    # --- RESMİ GAZETE FONKSİYONLARI (GÜÇLENDİRİLMİŞ) ---
+    # --- RESMİ GAZETE FONKSİYONLARI (PROXY DESTEKLİ) ---
     
-    def fetch_page_content(url):
-        """Linkin içeriğini metin olarak çeker."""
+    def get_content_with_proxy(url):
+        """
+        Resmi Gazete engellemesini aşmak için Proxy kullanır.
+        """
+        API_KEY = "afe6d60b061ef600cbe8477886476f1a" # Mevcut ScraperAPI anahtarınız
+        
+        # 1. Önce Doğrudan Dene (Hızlı)
         try:
             headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-            response = requests.get(url, headers=headers, verify=False, timeout=10)
-            response.encoding = 'utf-8' # Türkçe karakter sorunu için
-            soup = BeautifulSoup(response.content, "html.parser")
+            response = requests.get(url, headers=headers, verify=False, timeout=5)
+            if response.status_code == 200:
+                response.encoding = 'utf-8'
+                return response.content
+        except:
+            pass # Doğrudan bağlantı başarısızsa Proxy'ye geç
             
+        # 2. Proxy ile Dene (Yavaş ama Garantili)
+        try:
+            payload = {'api_key': API_KEY, 'url': url, 'country_code': 'tr'}
+            response = requests.get('http://api.scraperapi.com', params=payload, timeout=60)
+            if response.status_code == 200:
+                response.encoding = 'utf-8'
+                return response.content
+        except Exception as e:
+            st.error(f"Proxy Hatası: {str(e)}")
+            return None
+        return None
+
+    def fetch_page_content(url):
+        """Linkin içeriğini metin olarak çeker."""
+        content = get_content_with_proxy(url)
+        if not content: return ""
+        
+        try:
+            soup = BeautifulSoup(content, "html.parser")
             # Sadece ana metin alanını almaya çalış
             content_div = soup.find("div", class_="WordSection1")
-            if not content_div:
-                content_div = soup.find("body")
+            if not content_div: content_div = soup.find("body")
             
             text = content_div.get_text(" ", strip=True) if content_div else ""
             return text
         except:
             return ""
 
-    def scrape_daily_resmi_gazete(search_keyword=None):
+    def scrape_daily_resmi_gazete(selected_date, search_keyword=None):
         """
-        Resmi Gazete'yi tarar.
-        Eğer search_keyword varsa: Linklerin İÇİNE girip o kelimeyi arar.
-        Eğer yoksa: Sadece başlıkta Yönetmelik/Tebliğ arar.
+        Seçilen tarihteki Resmi Gazete'yi tarar.
         """
-        today = datetime.date.today()
-        # Gece 02:00'den önceyse dünü kontrol et
-        if datetime.datetime.now().hour < 2:
-            today = today - datetime.timedelta(days=1)
+        date_str = selected_date.strftime('%Y%m%d')
+        target_url = f"https://www.resmigazete.gov.tr/eskiler/{selected_date.year}/{selected_date.month:02d}/{date_str}.htm"
+        
+        content = get_content_with_proxy(target_url)
+        
+        if not content:
+            return [], "Resmi Gazete'ye erişilemedi (Engel veya Yayınlanmadı)."
             
-        date_str = today.strftime('%Y%m%d')
-        target_url = f"https://www.resmigazete.gov.tr/eskiler/{today.year}/{today.month:02d}/{date_str}.htm"
-        
-        headers = {"User-Agent": "Mozilla/5.0"}
-        
         try:
-            response = requests.get(target_url, headers=headers, verify=False, timeout=15)
-            if response.status_code != 200:
-                return [], f"Resmi Gazete bugünkü sayıya ulaşılamadı. ({response.status_code})"
-            
-            response.encoding = 'utf-8'
-            soup = BeautifulSoup(response.content, "html.parser")
-            
+            soup = BeautifulSoup(content, "html.parser")
             all_links = soup.find_all("a")
             found_items = []
             
-            # İlerleme çubuğu (Sadece derin arama varsa gösterilir)
+            # İlerleme çubuğu
             progress_bar = None
             if search_keyword:
-                progress_bar = st.progress(0, text="Derinlemesine içerik taraması yapılıyor...")
+                progress_bar = st.progress(0, text="Derinlemesine içerik taraması (Proxy ile)...")
             
             total_links = len(all_links)
             
@@ -2899,18 +2915,17 @@ def render_circular_cross_check_module(api_key):
                     
                     # 1. DURUM: KULLANICI ARAMA YAPTIYSA (Derin Tarama)
                     if search_keyword:
-                        # İlerlemeyi güncelle
                         if progress_bar: progress_bar.progress((i + 1) / total_links)
                         
                         # İçeriği indir
-                        content = fetch_page_content(full_link)
+                        page_text = fetch_page_content(full_link)
                         
                         # Kelime içerikte veya başlıkta geçiyor mu?
-                        if search_keyword.lower() in content.lower() or search_keyword.lower() in txt.lower():
+                        if search_keyword.lower() in page_text.lower() or search_keyword.lower() in txt.lower():
                             found_items.append({
                                 "title": txt,
                                 "link": full_link,
-                                "content_snippet": content[:2000], # AI için başını al
+                                "content_snippet": page_text[:2000],
                                 "match_type": "İçerik Eşleşmesi"
                             })
                             
@@ -2933,7 +2948,6 @@ def render_circular_cross_check_module(api_key):
 
     # --- KAYSİS ---
     def fetch_kaysis_smart_search(search_term):
-        # (Önceki kodun aynısı - yer kaplamaması için özetlendi)
         base_url = "https://kms.kaysis.gov.tr"
         target_url = "https://kms.kaysis.gov.tr/Home/Kurum/24308110"
         try:
@@ -3019,34 +3033,33 @@ def render_circular_cross_check_module(api_key):
             st.components.v1.html(difflib.HtmlDiff().make_file(t1.splitlines(), t2.splitlines()), height=400, scrolling=True)
 
     # ==========================================
-    # 6. SEKME: RESMİ GAZETE (GÜÇLENDİRİLMİŞ)
+    # 6. SEKME: RESMİ GAZETE (PROXY & TARİH SEÇİMİ)
     # ==========================================
     with tabs[5]:
         st.subheader("📢 Resmi Gazete Canlı Takip & Derin Analiz")
-        st.markdown("""
-        Bu modül bugünkü Resmi Gazete'yi tarar. 
-        *   **Boş bırakırsanız:** Sadece önemli başlıkları (Yönetmelik/Tebliğ) getirir.
-        *   **Kelime yazarsanız:** Tüm linklerin **İÇERİĞİNE** girer ve o kelimeyi (örn: '5996', 'Veteriner') arar.
-        """)
+        st.info("Sunucu engellemelerini aşmak için Proxy entegrasyonu yapılmıştır.")
         
-        col_search, col_btn = st.columns([3, 1])
+        col_date, col_search = st.columns([1, 2])
+        with col_date:
+            # Tarih Seçici Eklendi
+            selected_date = st.date_input("Tarih Seçin", datetime.date.today())
         with col_search:
-            search_keyword = st.text_input("🔍 Özel Kelime Ara (Opsiyonel)", placeholder="Örn: 5996, Süt, Destekleme, Ceza")
-        with col_btn:
-            st.write("") # Hizalama boşluğu
-            st.write("") 
-            run_btn = st.button("📰 Gazeteyi Tara")
+            search_keyword = st.text_input("🔍 Özel Kelime Ara (Opsiyonel)", placeholder="Örn: 5996, Süt, Destekleme")
             
+        run_btn = st.button("📰 Gazeteyi Tara")
         target_phone = "905427880956"
         
         if run_btn:
-            with st.spinner("Resmi Gazete taranıyor... (İçerik araması biraz zaman alabilir)"):
-                items, error = scrape_daily_resmi_gazete(search_keyword if search_keyword else None)
+            with st.spinner("Resmi Gazete taranıyor (Bu işlem Proxy nedeniyle 15-20 sn sürebilir)..."):
+                items, error = scrape_daily_resmi_gazete(selected_date, search_keyword if search_keyword else None)
                 
                 if error:
                     st.error(f"Hata: {error}")
+                    # Fallback Linki
+                    date_url = f"https://www.resmigazete.gov.tr/eskiler/{selected_date.year}/{selected_date.month:02d}/{selected_date.strftime('%Y%m%d')}.htm"
+                    st.markdown(f"👉 [Manuel Olarak Resmi Gazete'ye Gitmek İçin Tıkla]({date_url})")
                 elif not items:
-                    msg = f"Bugünkü Resmi Gazete'de '{search_keyword}' ile ilgili bir kayıt bulunamadı." if search_keyword else "Bugün önemli bir Yönetmelik/Tebliğ değişikliği yok."
+                    msg = f"'{search_keyword}' ile ilgili bir kayıt bulunamadı." if search_keyword else "Önemli bir Yönetmelik/Tebliğ değişikliği yok."
                     st.info(msg)
                 else:
                     st.success(f"✅ {len(items)} adet kayıt bulundu!")
@@ -3060,23 +3073,20 @@ def render_circular_cross_check_module(api_key):
                             # AI Analiz Butonu
                             if st.button(f"🤖 AI ile Analiz Et (#{i+1})", key=f"ai_btn_{i}"):
                                 with st.spinner("Metin analiz ediliyor..."):
-                                    # Eğer içerik daha önce çekilmediyse şimdi çek
                                     content = item.get('content_snippet')
                                     if not content or len(content) < 100:
                                         content = fetch_page_content(item['link'])
                                     
-                                    # Prompt Hazırla
                                     if search_keyword:
                                         prompt = f"""
                                         GÖREV: Bu Resmi Gazete metnini analiz et.
                                         KULLANICI ARAMASI: '{search_keyword}'
-                                        
                                         METİN: {content[:10000]}
                                         
                                         İSTENENLER:
-                                        1. Bu metinde '{search_keyword}' ile ilgili ne deniyor? (Özetle)
-                                        2. Bu düzenleme neyi değiştiriyor?
-                                        3. WhatsApp mesajı formatında kısa bir bilgilendirme yaz.
+                                        1. Bu metinde '{search_keyword}' ile ilgili ne deniyor?
+                                        2. Önemli bir değişiklik var mı?
+                                        3. WhatsApp mesajı formatında kısa özet.
                                         """
                                     else:
                                         prompt = f"Bu Resmi Gazete maddesini özetle: {item['title']}. Link: {item['link']}. WhatsApp mesajı hazırla."
@@ -3084,9 +3094,9 @@ def render_circular_cross_check_module(api_key):
                                     ai_res = get_ai_response(prompt, api_key)
                                     st.info(ai_res)
                                     
-                                    # WhatsApp Gönder
-                                    wa_msg = urllib.parse.quote(f"*RESMİ GAZETE UYARISI*\n\n{ai_res}\n\n🔗 {item['link']}")
+                                    wa_msg = urllib.parse.quote(f"*RESMİ GAZETE*\n\n{ai_res}\n\n🔗 {item['link']}")
                                     st.markdown(f"<a href='https://wa.me/{target_phone}?text={wa_msg}' target='_blank'><button style='background-color:#25D366; color:white; border:none; padding:8px 16px; border-radius:5px;'>📲 WhatsApp'a Gönder</button></a>", unsafe_allow_html=True)
+
 
 
 
