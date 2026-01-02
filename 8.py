@@ -2807,10 +2807,13 @@ def render_circular_cross_check_module(api_key):
 
     def fetch_kaysis_smart_search(search_term):
         """
-        KAYSİS üzerinde Requests+BS4 ile arama yapar, linkleri bulur.
+        KAYSİS üzerinde önce doğrudan, olmazsa Proxy ile arama yapar.
         """
         base_url = "https://kms.kaysis.gov.tr"
         target_url = "https://kms.kaysis.gov.tr/Home/Kurum/24308110"
+        
+        # ScraperAPI Key (Sizin verdiğiniz)
+        API_KEY = "afe6d60b061ef600cbe8477886476f1a"
         
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -2820,22 +2823,37 @@ def render_circular_cross_check_module(api_key):
         session = requests.Session()
         session.headers.update(headers)
         
-        results_list = []
-        
-        try:
-            # 1. Sayfayı Çek
-            response = session.get(target_url, timeout=20, verify=False)
-            
-            # Eğer doğrudan erişim yasaksa ScraperAPI (Proxy) devreye girsin
-            if response.status_code != 200:
-                API_KEY = "afe6d60b061ef600cbe8477886476f1a"
-                payload = {'api_key': API_KEY, 'url': target_url, 'country_code': 'tr', 'render': 'true'}
-                response = requests.get('http://api.scraperapi.com', params=payload, timeout=60)
-            
-            if response.status_code != 200:
-                return [], f"Bağlantı Hatası: {response.status_code}"
+        response = None
+        used_method = "Direct"
 
-            # 2. HTML Analizi (BeautifulSoup)
+        # 1. ADIM: Doğrudan Bağlantı Denemesi (Kısa Timeout)
+        try:
+            # Timeout'u 5 saniye yaptık, cevap vermezse hemen Proxy'ye geçsin.
+            response = session.get(target_url, timeout=5, verify=False)
+            if response.status_code != 200:
+                raise Exception(f"Status Code: {response.status_code}")
+        except Exception as e:
+            # Doğrudan bağlantı başarısız olduysa Proxy'ye geç
+            used_method = "Proxy"
+            try:
+                payload = {
+                    'api_key': API_KEY, 
+                    'url': target_url, 
+                    'country_code': 'tr', 
+                    'render': 'true' # JS render et
+                }
+                # Proxy için 60 saniye bekleme süresi
+                response = requests.get('http://api.scraperapi.com', params=payload, timeout=60)
+            except Exception as proxy_error:
+                return [], f"Hem doğrudan hem proxy erişimi başarısız: {str(proxy_error)}"
+
+        # 2. ADIM: Yanıt Kontrolü
+        if not response or response.status_code != 200:
+            return [], f"Sunucu yanıt vermedi. (Yöntem: {used_method})"
+
+        # 3. ADIM: HTML Analizi (BeautifulSoup)
+        results_list = []
+        try:
             soup = BeautifulSoup(response.content, "html.parser")
             
             # Tablo satırlarını bul
@@ -2869,7 +2887,7 @@ def render_circular_cross_check_module(api_key):
             return results_list, "Başarılı"
 
         except Exception as e:
-            return [], f"Hata: {str(e)}"
+            return [], f"Veri işleme hatası: {str(e)}"
 
     # --- ANA ARAYÜZ ---
     st.header("📜 Mevzuat & Genelge Entegre Analiz Sistemi")
@@ -2916,7 +2934,6 @@ def render_circular_cross_check_module(api_key):
             else:
                 with st.spinner("Denetim yapılıyor..."):
                     base_prompt = f"GÖREV: Tarım Bakanlığı Müfettişi. KAPSAM: {kanun_kapsami}. Uygunluk denetimi yap."
-                    # Hata oluşturan iç içe try-except kaldırıldı, doğrudan çağrılıyor
                     if image_data:
                         response = get_ai_response([base_prompt, image_data], api_key)
                     else:
@@ -2946,11 +2963,11 @@ def render_circular_cross_check_module(api_key):
             st.markdown(f"<a href='{full_url}' target='_blank'><button style='background-color:#1976d2; color:white; padding:10px; width:100%; border:none; border-radius:5px;'>👉 SONUÇLARI GÖRMEK İÇİN TIKLAYIN</button></a>", unsafe_allow_html=True)
 
     # ==========================================
-    # 4. SEKME: KAYSİS AKILLI ARAMA (YENİ)
+    # 4. SEKME: KAYSİS AKILLI ARAMA (GÜÇLENDİRİLMİŞ)
     # ==========================================
     with tabs[3]:
         st.subheader("⚡ KAYSİS Akıllı Arama & AI Analizi")
-        st.caption("Bakanlık veritabanını tarar, linkleri bulur ve Yapay Zeka ile en doğrusunu seçer.")
+        st.caption("Bakanlık veritabanını tarar. (Devlet sitesi engellerse otomatik Proxy devreye girer)")
         
         kaysis_term = st.text_input("Mevzuat/Belge Adı:", placeholder="Örn: Disiplin Amirleri Yönetmeliği")
         
@@ -2958,13 +2975,13 @@ def render_circular_cross_check_module(api_key):
             if not kaysis_term:
                 st.warning("Lütfen aranacak kelime girin.")
             else:
-                with st.spinner("KAYSİS taranıyor ve linkler toplanıyor..."):
+                with st.spinner("KAYSİS taranıyor (Proxy bağlantısı 30sn sürebilir)..."):
                     results, status = fetch_kaysis_smart_search(kaysis_term)
                     
                     if results:
                         st.success(f"✅ {len(results)} adet olası belge bulundu.")
                         
-                        # 1. Sonuçları Listele (Tıklanabilir Linkler)
+                        # 1. Sonuçları Listele
                         st.markdown("### 📄 Bulunan Belgeler")
                         results_text_for_ai = ""
                         
@@ -2973,7 +2990,7 @@ def render_circular_cross_check_module(api_key):
                             st.markdown(f"{i+1}. {link_html}", unsafe_allow_html=True)
                             results_text_for_ai += f"- ID: {i+1}, Başlık: {res['title']}, Link: {res['link']}\n"
                         
-                        # 2. AI Analizi Başlat
+                        # 2. AI Analizi
                         st.divider()
                         st.subheader("🤖 Yapay Zeka Analizi")
                         with st.spinner("Yapay Zeka sonuçları analiz ediyor..."):
@@ -2994,10 +3011,19 @@ def render_circular_cross_check_module(api_key):
                             ai_analysis = get_ai_response(ai_prompt, api_key)
                             st.info(ai_analysis)
                     else:
-                        st.warning("⚠️ Sonuç bulunamadı.")
-                        if "Hata" in status:
-                            st.error(status)
-                            st.caption("İpucu: Eğer Cloud sunucudaysanız devlet sitesi engelliyor olabilir. Localhost'ta deneyin.")
+                        st.warning("⚠️ KAYSİS üzerinde sonuç bulunamadı veya site yanıt vermedi.")
+                        st.error(f"Sistem Mesajı: {status}")
+                        
+                        # Google Alternatifi
+                        g_url = f"https://www.google.com/search?q={urllib.parse.quote(kaysis_term + ' site:kms.kaysis.gov.tr')}"
+                        st.markdown(f"""
+                        <br>
+                        <a href="{g_url}" target="_blank">
+                            <button style="background-color:#d32f2f; color:white; padding:12px; border:none; border-radius:5px; width:100%;">
+                                🌍 Google Üzerinden KAYSİS'i Tara (Kesin Çözüm)
+                            </button>
+                        </a>
+                        """, unsafe_allow_html=True)
 
     # ==========================================
     # 5. SEKME: DIFF
@@ -3012,6 +3038,7 @@ def render_circular_cross_check_module(api_key):
             html = d.make_file(old_text.splitlines(), new_text.splitlines(), fromdesc="Eski", todesc="Yeni")
             html = html.replace('table.diff {font-family:Courier; border:medium;}', 'table.diff {font-family:sans-serif; width:100%; border:1px solid #ddd;}')
             st.components.v1.html(html, height=400, scrolling=True)
+
 
 
 
