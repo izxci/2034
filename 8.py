@@ -2799,26 +2799,24 @@ def render_circular_cross_check_module(api_key):
             return f"Hata: Dosya okunamadı. ({str(e)})"
         return text
 
-    def fetch_kaysis_turbo(url, search_term):
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }
+def fetch_kaysis_turbo(url, search_term):
+    # ScraperAPI kullanarak isteği yönlendirme (Cloud'da çalışması için)
+    # scraperapi.com adresinden alacağınız API KEY buraya:
+    API_KEY = "afe6d60b061ef600cbe8477886476f1a" 
+    
+    payload = {
+        'api_key': API_KEY, 
+        'url': url, 
+        'country_code': 'tr' # Türk IP'si isteği
+    }
+    
+    try:
+        response = requests.get('http://api.scraperapi.com', params=payload, timeout=20)
         
-        try:
-            # 1. YÖNTEM: Doğrudan Bağlantı (Önce bunu dener)
-            session = requests.Session()
-            response = session.get(url, headers=headers, verify=False, timeout=5)
-        except:
-            # 2. YÖNTEM (HATA ALIRSA): Proxy Tüneli Kullan (Engel Aşma)
-            # Bu servis, isteği kendi sunucusu üzerinden atar, böylece IP engelini aşabilir.
-            proxy_url = f"https://corsproxy.io/?{url}"
-            try:
-                response = session.get(proxy_url, headers=headers, verify=False, timeout=10)
-            except Exception as e:
-                return None, f"Proxy ile de bağlanılamadı: {str(e)}"
+        if response.status_code != 200: return None, "Proxy Hatası"
+        
+        # ... (Geri kalan pandas işlemleri aynı) ...
 
-        if response.status_code != 200:
-            return None, f"Sunucu Hatası: {response.status_code}"
         
         try:
             # Tabloları Oku
