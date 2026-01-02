@@ -3098,6 +3098,88 @@ def render_circular_cross_check_module(api_key):
                                     st.markdown(f"<a href='https://wa.me/{target_phone}?text={wa_msg}' target='_blank'><button style='background-color:#25D366; color:white; border:none; padding:8px 16px; border-radius:5px;'>📲 WhatsApp'a Gönder</button></a>", unsafe_allow_html=True)
 
 
+def render_defense_chronology_module(api_key):
+    import streamlit as st
+    import pandas as pd
+    from io import StringIO
+    
+    # --- ARAYÜZ ---
+    st.markdown("## ⏳ İdari Savunma Kronoloji Oluşturucu")
+    st.info("Dava dosyasındaki belgeleri (Tutanak, Olur, Tebligat, Dava Dilekçesi) yükleyin. Sistem tarihleri ayıklayıp usul yönünden (süre aşımı vb.) inceleme yapar.")
+
+    col_upload, col_result = st.columns([1, 2])
+
+    with col_upload:
+        st.subheader("📂 İşlem Dosyası Yükle")
+        uploaded_files = st.file_uploader("Belgeleri Seçin", accept_multiple_files=True, type=['pdf', 'docx', 'txt', 'jpg'])
+        
+        analyze_btn = st.button("📅 Kronoloji ve Usul Analizi Yap")
+
+    with col_result:
+        if analyze_btn and uploaded_files and api_key:
+            # 1. Tüm metinleri birleştir
+            full_text_context = ""
+            file_names = []
+            
+            # (Ana kodunuzdaki extract_text_from_file fonksiyonunu kullanıyoruz)
+            # Not: Bu fonksiyonun erişilebilir olduğundan emin olun.
+            try:
+                for f in uploaded_files:
+                    # extract_text_from_file fonksiyonu ana kodda tanımlı olmalı
+                    # Eğer tanımlı değilse buraya kopyalamanız gerekir.
+                    # Basitlik adına burada varsayıyoruz.
+                    # text = extract_text_from_file(f) 
+                    
+                    # Geçici çözüm (Fonksiyon yoksa hata vermesin diye):
+                    from pypdf import PdfReader
+                    text = ""
+                    if f.name.endswith('.pdf'):
+                        reader = PdfReader(f)
+                        for p in reader.pages: text += p.extract_text() or ""
+                    else:
+                        text = "Metin okunamadı veya desteklenmeyen format."
+                        
+                    full_text_context += f"\n--- BELGE ADI: {f.name} ---\n{text}\n"
+                    file_names.append(f.name)
+            except Exception as e:
+                st.error(f"Dosya okuma hatası: {e}")
+                full_text_context = ""
+
+            if full_text_context:
+                with st.spinner("Tarihler ayıklanıyor, süreler hesaplanıyor ve İYUK kontrolü yapılıyor..."):
+                    
+                    # 2. AI Prompt (Hukuki Mantık)
+                    prompt = f"""
+                    GÖREV: Sen kıdemli bir İdari Yargı Hakimisin.
+                    Aşağıdaki dava dosyası belgelerindeki metinleri analiz et.
+                    
+                    BELGELER:
+                    {full_text_context}
+                    
+                    İSTENENLER:
+                    1. KRONOLOJİ LİSTESİ: Metinde geçen tüm tarihleri ve o tarihte ne olduğunu kronolojik (eskiden yeniye) sırala.
+                    2. USUL İNCELEMESİ (İYUK):
+                       - İşlem tarihi ile Tebligat tarihi arasındaki süre makul mü?
+                       - **KRİTİK:** Tebligat tarihi ile Dava Açma tarihi arasında kaç gün var? (İYUK md. 7'ye göre 60 günü geçmiş mi?)
+                       - İdari Başvuru (İtiraz) varsa, bu süreyi durdurmuş mu?
+                    3. SONUÇ VE RİSK: İdare lehine "Süre Aşımı Def'i" (Zamanaşımı itirazı) yapılabilir mi?
+                    
+                    ÇIKTI FORMATI:
+                    Önce Markdown tablosu olarak kronolojiyi ver (Tarih | Olay | Belge).
+                    Sonra "USUL ANALİZİ" başlığı altında hukuki değerlendirmeni yaz.
+                    """
+                    
+                    # 3. AI Cevabı
+                    response = get_ai_response(prompt, api_key)
+                    
+                    # Sonucu Göster
+                    st.markdown(response)
+                    
+                    # Görsel Zaman Çizelgesi (Basit)
+                    st.divider()
+                    st.caption("🤖 Not: Yapay zeka tarihleri metin içinden bağlama göre çıkarmıştır. Lütfen orijinal belgelerle teyit ediniz.")
+            else:
+                st.warning("Metin içeriği alınamadı.")
 
 
 
@@ -3209,8 +3291,8 @@ def main():
 
     # 4. SATIR: oyun değiştirici hamle menüsü (15 Sekme)
     st.markdown("### 🛠️ Temel Araçlar & Strateji")
-    tabx1, tabx2, tabx3, tabx4, tabx5, tabx6, tabx7, tabx8, tabx9 = st.tabs([
-        "🗺️ Adli Harita", "🕰️ Mevzuat Makinesi", "🧐 Rapor Denetçisi", "🏛️ Kurumsal Hafıza", "💰 Dava Maliyeti", "🗺️ Adli Olay Yeri", "🕵️ Visual Forensics", "🌲 Özel Mevzuat (Orman/Tarım)" ,"🌐 Bakanlık Veri Tabanı"
+    tabx1, tabx2, tabx3, tabx4, tabx5, tabx6, tabx7, tabx8, tabx9, tabx10 = st.tabs([
+        "🗺️ Adli Harita", "🕰️ Mevzuat Makinesi", "🧐 Rapor Denetçisi", "🏛️ Kurumsal Hafıza", "💰 Dava Maliyeti", "🗺️ Adli Olay Yeri", "🕵️ Visual Forensics", "🌲 Özel Mevzuat (Orman/Tarım)" ,"🌐 Bakanlık Veri Tabanı", "⏳ İdari Kronoloji"
     ])
 
 
@@ -3251,6 +3333,7 @@ def main():
     with tabx7: render_visual_forensics_module(api_key)
     with tabx8: render_special_legislation_module(api_key)
     with tabx9: render_circular_cross_check_module(api_key)
+	with tabx10: render_defense_chronology_module(api_key)
     # --- TAB İÇERİKLERİ ---
 
     with tab1:
