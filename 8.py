@@ -3065,7 +3065,7 @@ def render_circular_cross_check_module(api_key):
                         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                     }
                     # Timeout'u kısa tutuyoruz (3 sn) ki takılırsa hemen Proxy'ye geçsin
-                    response = requests.get(url, headers=headers, verify=False, timeout=3)
+                    response = requests.get(url, headers=headers, verify=False, timeout=10)
                     
                     if response.status_code == 200:
                         response.encoding = 'utf-8'
