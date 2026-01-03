@@ -2836,7 +2836,7 @@ def render_circular_cross_check_module(api_key):
         except:
             return chunks[:1]
 
-    # --- RESMİ GAZETE FONKSİYONLARI (PROXY DESTEKLİ) ---
+  # --- RESMİ GAZETE FONKSİYONLARI (PROXY DESTEKLİ) ---
     
     def get_content_with_proxy(url):
         """
