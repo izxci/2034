@@ -3032,70 +3032,168 @@ def render_circular_cross_check_module(api_key):
         if st.button("Farkları Bul"):
             st.components.v1.html(difflib.HtmlDiff().make_file(t1.splitlines(), t2.splitlines()), height=400, scrolling=True)
 
-    # ==========================================
-    # 6. SEKME: RESMİ GAZETE (PROXY & TARİH SEÇİMİ)
-    # ==========================================
-    with tabs[5]:
-        st.subheader("📢 Resmi Gazete Canlı Takip & Derin Analiz")
-        st.info("Sunucu engellemelerini aşmak için Proxy entegrasyonu yapılmıştır.")
-        
-        col_date, col_search = st.columns([1, 2])
-        with col_date:
-            # Tarih Seçici Eklendi
-            selected_date = st.date_input("Tarih Seçin", datetime.date.today())
-        with col_search:
-            search_keyword = st.text_input("🔍 Özel Kelime Ara (Opsiyonel)", placeholder="Örn: 5996, Süt, Destekleme")
+        # ==========================================
+        # 6. SEKME: RESMİ GAZETE (HİBRİT: HIZLI + PROXY)
+        # ==========================================
+        with tabs[5]:
+            st.subheader("📢 Resmi Gazete Canlı Takip")
+            st.caption("Önce doğrudan hızlı bağlantı dener. Erişim engeli varsa otomatik olarak Proxy devreye girer.")
             
-        run_btn = st.button("📰 Gazeteyi Tara")
-        target_phone = "905427880956"
-        
-        if run_btn:
-            with st.spinner("Resmi Gazete taranıyor (Bu işlem Proxy nedeniyle 15-20 sn sürebilir)..."):
-                items, error = scrape_daily_resmi_gazete(selected_date, search_keyword if search_keyword else None)
+            # Parametreler
+            target_phone = "905427880956"
+            PROXY_API_KEY = "afe6d60b061ef600cbe8477886476f1a" # ScraperAPI Anahtarı
+            
+            # Tarih Seçimi
+            col_date, col_search = st.columns([1, 2])
+            with col_date:
+                selected_date = st.date_input("Tarih Seçin", datetime.date.today())
+            with col_search:
+                search_keyword = st.text_input("🔍 İçerik Ara (Opsiyonel)", placeholder="Örn: 5996, Süt, Destekleme")
+
+            # --- AKILLI BAĞLANTI FONKSİYONU ---
+            def get_content_smart_hybrid(url):
+                """
+                Önce normal bağlantıyı dener (Hızlı).
+                Başarısız olursa Proxy kullanır (Yavaş ama Garantili).
+                """
+                status_msg = st.empty() # Durum mesajı için yer tutucu
                 
-                if error:
-                    st.error(f"Hata: {error}")
-                    # Fallback Linki
-                    date_url = f"https://www.resmigazete.gov.tr/eskiler/{selected_date.year}/{selected_date.month:02d}/{selected_date.strftime('%Y%m%d')}.htm"
-                    st.markdown(f"👉 [Manuel Olarak Resmi Gazete'ye Gitmek İçin Tıkla]({date_url})")
-                elif not items:
-                    msg = f"'{search_keyword}' ile ilgili bir kayıt bulunamadı." if search_keyword else "Önemli bir Yönetmelik/Tebliğ değişikliği yok."
-                    st.info(msg)
-                else:
-                    st.success(f"✅ {len(items)} adet kayıt bulundu!")
+                # 1. YÖNTEM: DOĞRUDAN BAĞLANTI (HIZLI)
+                try:
+                    status_msg.info("🚀 Doğrudan bağlantı deneniyor...")
+                    headers = {
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                    }
+                    # Timeout'u kısa tutuyoruz (3 sn) ki takılırsa hemen Proxy'ye geçsin
+                    response = requests.get(url, headers=headers, verify=False, timeout=3)
                     
-                    for i, item in enumerate(items):
-                        with st.expander(f"📄 {item['title']}", expanded=True):
-                            st.write(f"**Link:** {item['link']}")
-                            if search_keyword:
-                                st.success(f"Bu belgenin içeriğinde '{search_keyword}' ifadesi tespit edildi.")
+                    if response.status_code == 200:
+                        response.encoding = 'utf-8'
+                        status_msg.success("✅ Doğrudan bağlantı başarılı! (Hızlı Mod)")
+                        time.sleep(1) # Mesajın okunması için
+                        status_msg.empty()
+                        return response.content
+                except Exception as e:
+                    pass # Hata verirse sessizce Proxy'ye geç
+                
+                # 2. YÖNTEM: PROXY BAĞLANTISI (GARANTİLİ)
+                try:
+                    status_msg.warning("🛡️ Doğrudan erişim engellendi/yavaş. Proxy devreye alınıyor...")
+                    payload = {
+                        'api_key': PROXY_API_KEY, 
+                        'url': url, 
+                        'country_code': 'tr',
+                        'device_type': 'desktop'
+                    }
+                    response = requests.get('http://api.scraperapi.com', params=payload, timeout=60)
+                    
+                    if response.status_code == 200:
+                        response.encoding = 'utf-8'
+                        status_msg.success("✅ Proxy ile veri çekildi.")
+                        time.sleep(1)
+                        status_msg.empty()
+                        return response.content
+                    else:
+                        status_msg.error(f"Proxy Hatası: {response.status_code}")
+                        return None
+                except Exception as e:
+                    status_msg.error(f"Bağlantı Hatası: {str(e)}")
+                    return None
+
+            # --- İÇERİK METNİ ALMA ---
+            def fetch_text_content(url):
+                html = get_content_smart_hybrid(url)
+                if not html: return ""
+                soup = BeautifulSoup(html, "html.parser")
+                div = soup.find("div", class_="WordSection1")
+                if not div: div = soup.find("body")
+                return div.get_text(" ", strip=True)[:8000] if div else ""
+
+            # --- ÇALIŞTIRMA BUTONU ---
+            if st.button("📰 Gazeteyi Tara"):
+                date_str = selected_date.strftime('%Y%m%d')
+                target_url = f"https://www.resmigazete.gov.tr/eskiler/{selected_date.year}/{selected_date.month:02d}/{date_str}.htm"
+                
+                with st.spinner("İşlem yapılıyor..."):
+                    page_content = get_content_smart_hybrid(target_url)
+                    
+                    if not page_content:
+                        st.error("Sayfaya ulaşılamadı. Manuel kontrol ediniz.")
+                        st.markdown(f"[Resmi Gazete Linki]({target_url})")
+                    else:
+                        soup = BeautifulSoup(page_content, "html.parser")
+                        links = soup.find_all("a")
+                        found_items = []
+                        
+                        # Eğer arama kelimesi varsa ilerleme çubuğu göster
+                        progress_bar = st.progress(0) if search_keyword else None
+                        total_links = len(links)
+                        
+                        for i, link in enumerate(links):
+                            txt = link.get_text(" ", strip=True)
+                            href = link.get("href")
                             
-                            # AI Analiz Butonu
-                            if st.button(f"🤖 AI ile Analiz Et (#{i+1})", key=f"ai_btn_{i}"):
-                                with st.spinner("Metin analiz ediliyor..."):
-                                    content = item.get('content_snippet')
-                                    if not content or len(content) < 100:
-                                        content = fetch_page_content(item['link'])
+                            if txt and href and not href.startswith("#"):
+                                full_link = urllib.parse.urljoin(target_url, href)
+                                
+                                # Arama Mantığı
+                                is_match = False
+                                snippet = ""
+                                
+                                # 1. Kelime Araması Varsa (Derin Analiz)
+                                if search_keyword:
+                                    if progress_bar: progress_bar.progress((i+1)/total_links)
                                     
-                                    if search_keyword:
-                                        prompt = f"""
-                                        GÖREV: Bu Resmi Gazete metnini analiz et.
-                                        KULLANICI ARAMASI: '{search_keyword}'
-                                        METİN: {content[:10000]}
-                                        
-                                        İSTENENLER:
-                                        1. Bu metinde '{search_keyword}' ile ilgili ne deniyor?
-                                        2. Önemli bir değişiklik var mı?
-                                        3. WhatsApp mesajı formatında kısa özet.
-                                        """
+                                    # Başlıkta geçiyor mu?
+                                    if search_keyword.lower() in txt.lower():
+                                        is_match = True
                                     else:
-                                        prompt = f"Bu Resmi Gazete maddesini özetle: {item['title']}. Link: {item['link']}. WhatsApp mesajı hazırla."
+                                        # İçeriğe girip bak (Sadece başlık uymadıysa)
+                                        content = fetch_text_content(full_link)
+                                        if search_keyword.lower() in content.lower():
+                                            is_match = True
+                                            snippet = content[:500]
+                                            
+                                # 2. Kelime Yoksa (Sadece Önemli Başlıklar)
+                                else:
+                                    keywords = ["yönetmelik", "tebliğ", "karar", "genelge"]
+                                    if any(k in txt.lower() for k in keywords):
+                                        is_match = True
+                                
+                                if is_match:
+                                    found_items.append({"title": txt, "link": full_link, "snippet": snippet})
+                        
+                        if progress_bar: progress_bar.empty()
+                        
+                        # Sonuçları Göster
+                        if not found_items:
+                            st.info("Kriterlere uygun kayıt bulunamadı.")
+                        else:
+                            st.success(f"✅ {len(found_items)} kayıt bulundu.")
+                            
+                            for idx, item in enumerate(found_items):
+                                with st.expander(f"📄 {item['title']}", expanded=True):
+                                    st.write(f"🔗 {item['link']}")
+                                    if item['snippet']:
+                                        st.caption(f"...{item['snippet']}...")
                                     
-                                    ai_res = get_ai_response(prompt, api_key)
-                                    st.info(ai_res)
-                                    
-                                    wa_msg = urllib.parse.quote(f"*RESMİ GAZETE*\n\n{ai_res}\n\n🔗 {item['link']}")
-                                    st.markdown(f"<a href='https://wa.me/{target_phone}?text={wa_msg}' target='_blank'><button style='background-color:#25D366; color:white; border:none; padding:8px 16px; border-radius:5px;'>📲 WhatsApp'a Gönder</button></a>", unsafe_allow_html=True)
+                                    # AI Analiz Butonu
+                                    if st.button(f"🧠 AI Analiz (#{idx+1})", key=f"anl_{idx}"):
+                                        with st.spinner("Analiz ediliyor..."):
+                                            full_text = fetch_text_content(item['link'])
+                                            if not full_text: full_text = item['title']
+                                            
+                                            prompt = f"""
+                                            GÖREV: Resmi Gazete metnini analiz et.
+                                            METİN: {full_text[:4000]}
+                                            SORU: Bu düzenleme ne getiriyor? Tarım/Gıda ile ilgisi ne? WhatsApp mesajı hazırla.
+                                            """
+                                            ai_resp = get_ai_response(prompt, api_key)
+                                            st.info(ai_resp)
+                                            
+                                            wa_msg = urllib.parse.quote(f"*RESMİ GAZETE*\n{ai_resp}\n{item['link']}")
+                                            st.markdown(f"<a href='https://wa.me/{target_phone}?text={wa_msg}' target='_blank'>📲 WhatsApp</a>", unsafe_allow_html=True)
+
 
 
 def render_defense_chronology_module(api_key):
