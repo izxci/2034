@@ -5,6 +5,7 @@ requests
 python-docx
 python-dotenv
 PyPDF2
+faiss-cpu
 scikit-learn
 feedparser
 fpdf
