@@ -1,117 +1,120 @@
 import streamlit as st
 import google.generativeai as genai
 import re
-from rank_bm25 import BM25Okapi
-from rapidfuzz import process, fuzz
+import difflib
 from PyPDF2 import PdfReader
+import numpy as np
 
 # Sayfa Ayarları
-st.set_page_config(page_title="Hukuk Arama Motoru", layout="wide")
+st.set_page_config(page_title="Mevzuat Analiz Sistemi", layout="wide", page_icon="⚖️")
 
-# --- ARAMA MOTORU SINIFI ---
-class MevzuatSearchEngine:
-    def __init__(self, belgeler):
-        self.belgeler = belgeler
-        # BM25 için kelimelere ayırma (Tokenization)
-        self.tokenized_corpus = [doc.lower().split() for doc in belgeler]
-        self.bm25 = BM25Okapi(self.tokenized_corpus)
+# --- GELİŞMİŞ ARAMA MOTORU (STANDART KÜTÜPHANE İLE) ---
+def akilli_ara(sorgu, mevzuat_listesi, limit=5):
+    sorgu = sorgu.lower().strip()
+    sonuclar = []
+    
+    for madde in mevzuat_listesi:
+        skor = 0
+        madde_lower = madde.lower()
+        
+        # 1. Tam Eşleşme (En yüksek puan)
+        if sorgu in madde_lower:
+            skor += 100
+        
+        # 2. Kelime Bazlı Eşleşme
+        sorgu_kelimeleri = sorgu.split()
+        eslesen_kelime_sayisi = sum(1 for k in sorgu_kelimeleri if k in madde_lower)
+        skor += (eslesen_kelime_sayisi * 20)
+        
+        # 3. Benzerlik (Fuzzy) Skoru (difflib ile - Kurulum gerektirmez)
+        # Maddenin ilk 200 karakteriyle sorgu arasındaki benzerliğe bakar
+        benzerlik = difflib.SequenceMatcher(None, sorgu, madde_lower[:200]).ratio()
+        skor += (benzerlik * 50)
+        
+        if skor > 10: # Belirli bir eşiğin üzerindekileri getir
+            sonuclar.append((madde, skor))
+    
+    # Skorlara göre sırala
+    return sorted(sonuclar, key=lambda x: x[1], reverse=True)[:limit]
 
-    def ara(self, query, top_n=5):
-        # 1. BM25 Skoru (Kelime bazlı en iyi eşleşme)
-        query_tokens = query.lower().split()
-        bm25_scores = self.bm25.get_scores(query_tokens)
-        
-        # 2. Fuzzy Matching (Yazım hataları ve benzerlik için)
-        fuzzy_results = process.extract(query, self.belgeler, scorer=fuzz.PartialRatio, limit=20)
-        
-        # Sonuçları birleştir ve puanla
-        combined_results = []
-        for idx, doc in enumerate(self.belgeler):
-            score = bm25_scores[idx]
-            # Eğer fuzzy sonuçlarda varsa puanı artır
-            for f_doc, f_score, f_idx in fuzzy_results:
-                if doc == f_doc:
-                    score += (f_score / 10) # Fuzzy bonusu
-            
-            if score > 0:
-                combined_results.append((doc, score))
-        
-        # Puanlara göre sırala
-        return sorted(combined_results, key=lambda x: x[1], reverse=True)[:top_n]
-
-# --- SESSION STATE ---
-if 'mevzuat_listesi' not in st.session_state:
-    st.session_state.mevzuat_listesi = [
-        "Tarımda Kullanılan Gübrelerin Piyasa Gözetimi ve Denetimi Yönetmeliği Madde 1: Amaç ve Kapsam.",
-        "Gübrelerin Piyasa Gözetimi Madde 41: İdari yaptırımlar ve para cezaları Bakanlıkça uygulanır.",
-        "5996 Sayılı Kanun Madde 41: Teknik düzenlemelere aykırı ürün arz edenlere 20.000 TL idari para cezası verilir.",
-        "Denetim Personeli Eğitimi Tebliği: Denetçilerin sahip olması gereken nitelikler.",
-        "Gübre Analiz Metodları Rehberi: Numune alma usul ve esasları."
+# --- VERİ YÖNETİMİ ---
+if 'mevzuat_verisi' not in st.session_state:
+    st.session_state.mevzuat_verisi = [
+        "Tarımda Kullanılan Gübrelerin Piyasa Gözetimi ve Denetimi Yönetmeliği Madde 41: İdari yaptırımlar Bakanlık il müdürlükleri tarafından uygulanır.",
+        "5996 Sayılı Kanun: Teknik düzenlemelere aykırı gübre arzına 20.000 TL idari para cezası verilir.",
+        "Gübre Denetimi Yönetmeliği Madde 15: Denetçiler numune alırken tutanak tutmak zorundadır.",
+        "Resmi Gazete 28956: Gübrelerin piyasaya arzı ve denetimi esasları."
     ]
 
-# --- SIDEBAR (Gelişmiş Arama) ---
+# --- SIDEBAR ---
 with st.sidebar:
-    st.title("🔍 Gelişmiş Arama")
+    st.title("⚖️ Mevzuat Paneli")
     api_key = st.text_input("Gemini API Key", type="password")
     
     st.divider()
+    st.subheader("📂 Mevzuat Ekle")
+    uploaded_file = st.file_uploader("PDF Yükle", type="pdf")
     
-    # Dosya Yükleme (PDF okuma geliştirildi)
-    uploaded_file = st.file_uploader("Mevzuat PDF Yükle", type="pdf")
     if uploaded_file:
         reader = PdfReader(uploaded_file)
+        yeni_metin = ""
         for page in reader.pages:
-            text = page.extract_text()
-            # Satırları temizle ve ekle
-            lines = [l.strip() for l in text.split('\n') if len(l.strip()) > 30]
-            st.session_state.mevzuat_listesi.extend(lines)
-        st.success("Belge sisteme entegre edildi.")
+            yeni_metin += page.extract_text() + "\n"
+        # Paragraf bazlı bölme (Noktadan sonra yeni satır olan yerler)
+        paragraflar = [p.strip() for p in yeni_metin.split('\n') if len(p.strip()) > 40]
+        st.session_state.mevzuat_verisi.extend(paragraflar)
+        st.success(f"Sisteme {len(paragraflar)} yeni madde eklendi!")
 
     st.divider()
+    st.subheader("🔍 Direkt Madde Bul")
+    hizli_sorgu = st.text_input("Anahtar kelimeler (Örn: gübre ceza yetki)")
     
-    # AKILLI ARAMA KUTUSU
-    search_query = st.text_input("Mevzuat İçinde Ara", placeholder="Örn: 'para cezası yetki'")
-    
-    if search_query:
-        engine = MevzuatSearchEngine(st.session_state.mevzuat_listesi)
-        results = engine.ara(search_query)
-        
-        st.markdown(f"### 📍 En Alakalı {len(results)} Madde")
-        for doc, score in results:
-            # Arama terimlerini metin içinde vurgula
-            highlighted = doc
-            for word in search_query.split():
-                highlighted = re.sub(f"({re.escape(word)})", r'<mark style="background: #FFD700; color: black;">\1</mark>', highlighted, flags=re.IGNORECASE)
-            
-            st.markdown(f"""
-            <div style="background: white; padding: 10px; border-radius: 5px; border-left: 5px solid #007BFF; margin-bottom: 10px; color: black; font-size: 0.9rem;">
-                {highlighted}
-                <br><small style="color: gray;">Alakalılık Puanı: {round(score, 2)}</small>
-            </div>
-            """, unsafe_allow_html=True)
+    if hizli_sorgu:
+        bulunanlar = akilli_ara(hizli_sorgu, st.session_state.mevzuat_verisi)
+        if bulunanlar:
+            for metin, skor in bulunanlar:
+                # Vurgulama
+                vurgulu = metin
+                for k in hizli_sorgu.split():
+                    vurgulu = re.sub(f"({re.escape(k)})", r'<b style="color:red; background:yellow;">\1</b>', vurgulu, flags=re.IGNORECASE)
+                
+                st.markdown(f"""
+                <div style="background:#f0f2f6; padding:10px; border-radius:10px; margin-bottom:5px; border-left:4px solid #ff4b4b; font-size:0.8rem; color: black;">
+                {vurgulu}
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.warning("Eşleşen madde bulunamadı.")
 
-# --- ANA PANEL (AI ANALİZ) ---
-st.title("⚖️ Mevzuat Pro AI: Akıllı Analiz İstasyonu")
+# --- ANA EKRAN ---
+st.title("🤖 Mevzuat Analiz Yapay Zekası")
 
 if not api_key:
-    st.info("Sistemi tam kapasite kullanmak için API anahtarınızı girin. Yan menüdeki 'Gelişmiş Arama' her zaman çalışır.")
+    st.info("Lütfen sol menüden Gemini API anahtarınızı girin.")
 else:
     genai.configure(api_key=api_key)
-    user_ask = st.text_area("Mevzuat hakkında hukuki sorunuzu sorun:", placeholder="Örn: Gübre denetiminde numune alma usulü nedir?")
+    soru = st.text_area("Hukuki sorunuzu yazın:", placeholder="Örn: Gübre denetiminde idari yaptırım yetkisi kimdedir?")
     
     if st.button("Analiz Et"):
-        # AI için en alakalı bağlamı getir
-        engine = MevzuatSearchEngine(st.session_state.mevzuat_listesi)
-        relevant_docs = [r[0] for r in engine.ara(user_ask, top_n=10)]
-        context = "\n".join(relevant_docs)
+        # En alakalı 10 maddeyi AI'ya gönder
+        en_alakali = akilli_ara(soru, st.session_state.mevzuat_verisi, limit=10)
+        baglam = "\n".join([m[0] for m in en_alakali])
         
         model = genai.GenerativeModel('gemini-1.5-flash')
-        full_prompt = f"Şu mevzuat metinlerine göre soruyu profesyonelce cevapla:\n\n{context}\n\nSoru: {user_ask}"
+        prompt = f"""Sen uzman bir hukuk danışmanısın. Aşağıdaki mevzuat metinlerine dayanarak soruyu cevapla. 
+        Cevabında madde numaralarına atıf yap. Eğer bilgi metinde yoksa 'Veritabanında bulunamadı' de.
         
-        with st.spinner("AI Karar Veriyor..."):
-            response = model.generate_content(full_prompt)
-            st.markdown("### 🤖 AI Yanıtı")
+        MEVZUAT:
+        {baglam}
+        
+        SORU: {soru}
+        """
+        
+        with st.spinner("Düşünüyor..."):
+            response = model.generate_content(prompt)
+            st.subheader("📝 Analiz Sonucu")
             st.write(response.text)
             
-            with st.expander("Kullanılan Kaynak Maddeler"):
-                st.write(relevant_docs)
+            with st.expander("Analizde Kullanılan Kaynak Maddeler"):
+                for m, s in en_alakali:
+                    st.write(f"- {m}")
