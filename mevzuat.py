@@ -12,7 +12,7 @@ with st.sidebar:
     api_key = st.text_input("Gemini API Key", type="password")
     if api_key:
         genai.configure(api_key=api_key)
-    st.info("Gemini 1.5 Flash modeli ile yüksek hızlı analiz yapılır.")
+    st.info("Gemini 2.5 Flash modeli ile yüksek hızlı analiz yapılır.")
 
 # Örnek Mevzuat Veritabanı (Gerçekte bir dosyadan okunabilir)
 MEVZUAT_DATA = [
@@ -59,7 +59,7 @@ else:
                 context = "\n".join([MEVZUAT_DATA[i] for i in I[0]])
 
                 # 3. Adım: Gemini 1.5 Flash ile Yanıtla
-                model = genai.GenerativeModel('gemini-1.5-flash')
+                model = genai.GenerativeModel('gemini-2.5-flash')
                 prompt = f"""
                 Sen bir hukuk uzmanısın. Kullanıcının sorusunu aşağıdaki mevzuat parçalarına göre yanıtla.
                 Yanıtında 'Yetkili Makam', 'Ceza Miktarı' ve 'Hukuki Dayanak' başlıklarını kullan.
@@ -84,4 +84,4 @@ else:
 
 # Alt Bilgi
 st.sidebar.markdown("---")
-st.sidebar.caption("Mevzuat Pro AI v2.0 - Gemini 1.5 Flash Engine")
+st.sidebar.caption("Mevzuat Pro AI v2.0 - Gemini 2.5 Flash Engine")
