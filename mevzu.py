@@ -100,7 +100,7 @@ else:
         en_alakali = akilli_ara(soru, st.session_state.mevzuat_verisi, limit=10)
         baglam = "\n".join([m[0] for m in en_alakali])
         
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash')
         prompt = f"""Sen uzman bir hukuk danışmanısın. Aşağıdaki mevzuat metinlerine dayanarak soruyu cevapla. 
         Cevabında madde numaralarına atıf yap. Eğer bilgi metinde yoksa 'Veritabanında bulunamadı' de.
         
