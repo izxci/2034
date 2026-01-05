@@ -3,7 +3,8 @@ import google.generativeai as genai
 import io
 import json
 import re
-from streamlit_mic_recorder import mic_recorder
+from streamlit_mic_recorder 
+import mic_recorder
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(page_title="Bakanlık Sesli Asistan", layout="wide")
