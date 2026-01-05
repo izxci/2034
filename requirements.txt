@@ -22,4 +22,8 @@ graphviz
 networkx
 streamlit-folium
 folium
+streamlit
+google-generativeai
+faiss-cpu
+numpy
 google-generativeai>=0.7.0
