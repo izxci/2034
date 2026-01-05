@@ -109,6 +109,6 @@ else:
                     """, unsafe_allow_html=True)
                     
                     if st.button(f"Bu Maddeyi AI ile Analiz Et", key=f"btn_{idx}"):
-                        model = genai.GenerativeModel('gemini-1.5-flash')
+                        model = genai.GenerativeModel('gemini-2.5-flash')
                         response = model.generate_content(f"Şu maddeyi açıkla ve yaptırımını söyle: {madde_metni}")
                         st.info(response.text)
