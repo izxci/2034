@@ -31,7 +31,7 @@ if not api_key:
     st.stop()
 
 genai.configure(api_key=api_key)
-model = genai.GenerativeModel('gemini-1.5-flash')
+model = genai.GenerativeModel('gemini-2.5-flash')
 
 # Ses Kayıt Alanı
 st.subheader("🎤 Sesli Kayıt ve Analiz")
